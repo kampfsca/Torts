@@ -1,0 +1,86 @@
+---
+title: "Munging"
+subtitle: ""
+author: "Andy Kampfschulte"
+date: "`r Sys.Date()`"
+output: tint::tintPdf
+bibliography: skeleton.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+library(tint)
+# invalidate cache when the package version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tint'))
+options(htmltools.dir.version = FALSE)
+```
+
+
+```{r}
+pacs <- c("ggplot2",
+          "dplyr",
+          "tidyr",
+          "sf",
+          "MARSS",
+          "sp")
+
+invisible(lapply(pacs, library, character.only = TRUE))
+
+pal <- function(x){
+  wesanderson::wes_palette("Zissou1", x, "continuous")
+}
+```
+
+
+```{r}
+
+ref <- read.csv("data/Galapagos Tortoise Movement Ecology Programme-reference-data (1).csv")
+
+
+shp <- st_read("data/torts_shp/Galapagos Tortoise Movement Ecology Programme Shapefile") 
+
+crs <- "EPSG:4326"
+
+sp <- SpatialPoints(as(shp, "Spatial"))
+pts <- st_read("data/points.dbf")
+
+pts <- st_as_sf(pts, coords = c("long", "lat"), crs = crs)
+
+pts_sample <- st_set_crs(pts[sample(1:nrow(pts), 10000),], 4326)
+
+
+ggplot(pts_sample)+
+  geom_sf(aes(colour = individual), alpha = .05)+
+  theme_minimal()
+
+ggplot(shp)+
+  geom_sf()
+
+```
+
+# Digital Elevation Model?
+
+```{r}
+library(elevatr)
+
+pts_buff <- st_buffer(pts_sample[sample(1:nrow(pts_sample), 1000), ], 500)
+sp <- SpatialPoints(coords = st_coordinates(pts_buff))
+
+dem <- get_elev_raster(sp, prj = crs, z = 7)
+
+plot(dem, col = terrain.colors(99, alpha = NULL), pch = ".")
+
+plot(pts_sample, add = TRUE, pch = ".", col = "black")
+
+ggplot()+
+  ggspatial::layer_spatial(dem)+
+  geom_sf(data = pts_sample, aes(colour = ind_ident), alpha = .2, show.legend = FALSE)+
+  theme_minimal()+
+  scale_fill_gradientn(colours = pal(100))
+
+```
+
+
+
+
+
