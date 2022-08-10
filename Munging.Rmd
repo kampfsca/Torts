@@ -11,12 +11,12 @@ link-citations: yes
 ```{r setup, include=FALSE}
 library(tint)
 # invalidate cache when the package version changes
-knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tint'))
 options(htmltools.dir.version = FALSE)
 ```
 
 
 ```{r}
+
 pacs <- c("ggplot2",
           "dplyr",
           "tidyr",
@@ -29,6 +29,7 @@ invisible(lapply(pacs, library, character.only = TRUE))
 pal <- function(x){
   wesanderson::wes_palette("Zissou1", x, "continuous")
 }
+
 ```
 
 
@@ -58,7 +59,7 @@ ggplot(shp)+
 
 ```
 
-# Digital Elevation Model?
+# Digital Elevation Model
 
 ```{r}
 library(elevatr)
@@ -69,12 +70,13 @@ sp <- SpatialPoints(coords = st_coordinates(pts_buff))
 dem <- get_elev_raster(sp, prj = crs, z = 12)
 
 # plot(dem, col = terrain.colors(99, alpha = NULL), pch = ".")
-# 
+# Base plot of DEM with points
 # plot(pts_sample, add = TRUE, pch = ".", col = "black")
 
 ggdem <- ggplot()+
   ggspatial::layer_spatial(dem)+
-  geom_sf(data = pts_sample, aes(colour = ind_ident), alpha = .1, show.legend = FALSE)+
+  geom_sf(data = pts_sample, aes(colour = ind_ident), 
+          size = .5, alpha = .1, show.legend = FALSE)+
   theme_minimal()+
   scale_fill_gradientn(colours = pal(100))+
   scale_colour_grey()+
@@ -83,7 +85,20 @@ ggdem <- ggplot()+
 ggsave(plot = ggdem, filename = "plots/DEM_sample.png", dpi = 500,
        height = 6, width = 10)
 
+## Eleveation changes through time
+
+
+
 ```
+
+# Determining Movement vs. Non-Movement
+
+```{r}
+
+
+
+```
+
 
 
 
