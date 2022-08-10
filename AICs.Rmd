@@ -1,0 +1,708 @@
+---
+title: "MARSS Scripts"
+author: "Andy Kampfschulte"
+date: "9/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(MARSS)
+```
+
+```{r, eval = FALSE}
+dat.z <- readRDS("Data/analysis_data.rds")
+
+
+################ COVARIATES ##########################
+
+precip <- readRDS("Data/precip.rds")
+
+wind <- readRDS("Data/wind.rds")
+
+snow <- readRDS("Data/snow.rds")
+
+temp <- readRDS("Data/temp.rds")
+
+daylight <- readRDS("Data/daylight.rds")
+
+wkend <- readRDS("Data/wkend.rds")
+
+mets <- as.data.frame(cbind(t(wkend), t(daylight), t(temp), t(snow), t(wind), t(precip)))
+colnames(mets) <- c("Weekend", "Daylight", "Temperature", "Snow", "Wind", "Precipiation")
+
+mets$t <- seq(1, nrow(mets))
+mets$date <- rownames(mets)
+
+saveRDS(mets, "Data/mets.rds")
+
+metsl <- mets %>% 
+  pivot_longer(cols = 1:6) %>% 
+  filter(name != "Weekend") %>% 
+  group_by(name) %>% 
+  mutate(z = zscore(value),
+         Date = t+as.Date("oct_31_16", format = "%b_%d_%y"))
+
+
+pal <- wesanderson::wes_palette("Zissou1", 5, "continuous")
+ggplot(metsl, aes(x = (t+as.Date("oct_31_16", format = "%b_%d_%y")), y = value, , group = name))+
+  geom_line(size = 0.9, color = pal[1])+
+  facet_wrap(~name, scales = "free_y", nrow = 5)+
+  scale_color_manual(aesthetics = "colour", values = pal)+
+  scale_x_date(date_breaks = "4 weeks", date_labels = "%b '%y")+
+  theme_bw()+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12),
+        axis.text.x = element_text(angle = -45, hjust=0.01),
+        plot.margin = margin(.5,2,.5,.5, "cm"))+
+  labs(x = "Date",
+       y = "Value")
+ggsave("Weather.tiff", dpi = 1200)
+
+
+ggplot(metsl, aes(x = (t+as.Date("oct_31_16", format = "%b_%d_%y")), y = z))+
+  geom_line(size = 0.8, colour = pal[1])+
+  facet_wrap(~name, scales = "free_y", nrow = 5)+
+  scale_color_manual(aesthetics = "colour", values = pal)+
+  scale_x_date(date_breaks = "4 weeks", date_labels = "%b '%y")+
+  theme_bw()+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12),
+        axis.text.x = element_text(angle = -45, hjust=0.01),
+        plot.margin = margin(.5,2,.5,.5, "cm"))+
+  labs(x = "Date",
+       y = "Value (Z-Score)")
+ggsave("Z_Weather.tiff", dpi = 1200)
+
+```
+
+
+```{r State2, eval = FALSE}
+library(MARSS)
+
+model.list.dne.2 = list(m=2, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=FALSE)
+
+m2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list)
+
+mdl2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight))
+
+mwk2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend))
+
+mt2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(temp))
+
+mwdt2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp))
+
+mwdtp2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+mwdtpw2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, wind))
+
+mwdtpws2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, snow))
+
+saveRDS(m2, "Modelling/m2.rds")
+saveRDS(mdl2, "Modelling/mdl2.rds")
+saveRDS(mwk2, "Modelling/mwk2.rds")
+saveRDS(mt2, "Modelling/mt2.rds")
+saveRDS(mwdt2, "Modelling/mmwdt2.rds")
+saveRDS(mwdtp2, "Modelling/mwdtp2.rds")
+saveRDS(mwdtpw2, "Modelling/mwdtpw2.rds")
+saveRDS(mwdtpws2, "Modelling/mwdtpws2.rds")
+
+
+```
+
+
+```{r State3, eval = FALSE}
+
+model.list.dne.3 = list(m=3, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=FALSE)
+
+m3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list)
+
+mdl3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight))
+
+mwk3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend))
+
+mt3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(temp))
+
+mwdt3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp))
+
+mwdtp3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+mwdtpw3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, wind))
+
+mwdtpws3 = MARSS(dat.z, model=model.list.dne.3,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, snow))
+
+saveRDS(m3, "Modelling/m3.rds")
+saveRDS(mdl3, "Modelling/mdl3.rds")
+saveRDS(mwk3, "Modelling/mwk3.rds")
+saveRDS(mt3, "Modelling/mt3.rds")
+saveRDS(mwdt3, "Modelling/mmwdt3.rds")
+saveRDS(mwdtp3, "Modelling/mwdtp3.rds")
+saveRDS(mwdtpw3, "Modelling/mwdtpw3.rds")
+saveRDS(mwdtpws3, "Modelling/mwdtpws3.rds")
+```
+
+```{r state4, eval = FALSE}
+
+model.list.dne.4 = list(m=4, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=FALSE)
+
+m4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list)
+
+mdl4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight))
+
+mwk4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend))
+
+mt4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(temp))
+
+mwdt4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp))
+
+mwdtp4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+mwdtpw4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, wind))
+
+mwdtpws4 = MARSS(dat.z, model=model.list.dne.4,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, snow))
+
+saveRDS(m4, "Modelling/m4.rds")
+saveRDS(mdl4, "Modelling/mdl4.rds")
+saveRDS(mwk4, "Modelling/mwk4.rds")
+saveRDS(mt4, "Modelling/mt4.rds")
+saveRDS(mwdt4, "Modelling/mmwdt4.rds")
+saveRDS(mwdtp4, "Modelling/mwdtp4.rds")
+saveRDS(mwdtpw4, "Modelling/mwdtpw4.rds")
+saveRDS(mwdtpws4, "Modelling/mwdtpws4.rds")
+
+```
+
+
+```{r State5, eval = FALSE}
+
+model.list.dne.5 = list(m=5, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=FALSE)
+
+m5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list)
+
+mdl5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight))
+
+mwk5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend))
+
+mt5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(temp))
+
+mwdt5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp))
+
+mwdtp5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+mwdtpw5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, wind))
+
+mwdtpws5 = MARSS(dat.z, model=model.list.dne.5,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, snow))
+
+saveRDS(m5, "Modelling/m5.rds")
+saveRDS(mdl5, "Modelling/mdl5.rds")
+saveRDS(mwk5, "Modelling/mwk5.rds")
+saveRDS(mt5, "Modelling/mt5.rds")
+saveRDS(mwdt5, "Modelling/mmwdt5.rds")
+saveRDS(mwdtp5, "Modelling/mwdtp5.rds")
+saveRDS(mwdtpw5, "Modelling/mwdtpw5.rds")
+saveRDS(mwdtpws5, "Modelling/mwdtpws5.rds")
+
+```
+
+
+
+```{r TableOrg}
+
+m2 <- readRDS("Modelling/m2.rds")
+mdl2 <- readRDS("Modelling/mdl2.rds")
+mwk2 <- readRDS("Modelling/mwk2.rds")
+mt2 <- readRDS("Modelling/mt2.rds")
+mwdt2 <- readRDS("Modelling/mmwdt2.rds")
+mwdtp2 <- readRDS("Modelling/mwdtp2.rds")
+mwdtpw2 <- readRDS("Modelling/mwdtpw2.rds")
+mwdtpws2 <- readRDS("Modelling/mwdtpws2.rds")
+
+m3 <- readRDS("Modelling/m3.rds")
+mdl3 <- readRDS("Modelling/mdl3.rds")
+mwk3 <- readRDS("Modelling/mwk3.rds")
+mt3 <- readRDS("Modelling/mt3.rds")
+mwdt3 <- readRDS("Modelling/mmwdt3.rds")
+mwdtp3 <- readRDS("Modelling/mwdtp3.rds")
+mwdtpw3 <- readRDS("Modelling/mwdtpw3.rds")
+mwdtpws3 <- readRDS("Modelling/mwdtpws3.rds")
+
+
+m4 <- readRDS("Modelling/m4.rds")
+mdl4 <- readRDS("Modelling/mdl4.rds")
+mwk4 <- readRDS("Modelling/mwk4.rds")
+mt4 <- readRDS("Modelling/mt4.rds")
+mwdt4 <- readRDS("Modelling/mmwdt4.rds")
+mwdtp4 <- readRDS("Modelling/mwdtp4.rds")
+mwdtpw4 <- readRDS("Modelling/mwdtpw4.rds")
+mwdtpws4 <- readRDS("Modelling/mwdtpws4.rds")
+
+m5 <- readRDS("Modelling/m5.rds")
+mdl5 <- readRDS("Modelling/mdl5.rds")
+mwk5 <- readRDS("Modelling/mwk5.rds")
+mt5 <- readRDS("Modelling/mt5.rds")
+mwdt5 <- readRDS("Modelling/mmwdt5.rds")
+mwdtp5 <- readRDS("Modelling/mwdtp5.rds")
+mwdtpw5 <- readRDS("Modelling/mwdtpw5.rds")
+mwdtpws5 <- readRDS("Modelling/mwdtpws5.rds")
+
+
+```
+
+```{r, results = "asis", message = FALSE}
+
+df <- data.frame(Covariates = c("None", "Daylight", "Weekend", "Temperature", "Weekend, Daylight, Temperature",
+                                "Weekend, Daylight, Temperature, Precipitation",
+                                "Weekend, Daylight, Temperature, Precipitation, Wind",
+                                "Weekend, Daylight, Temperature, Precipitation, Wind, Snow"),
+                 `States=2` = c(m2$AIC,
+                                mdl2$AIC,
+                                mwk2$AIC, 
+                                mt2$AIC,
+                                mwdt2$AIC,
+                                mwdtp2$AIC,
+                                mwdtpw2$AIC,
+                                mwdtpws2$AIC),
+                 `States=3` = c(m3$AIC,
+                                mdl3$AIC,
+                                mwk3$AIC, 
+                                mt3$AIC,
+                                mwdt3$AIC,
+                                mwdtp3$AIC,
+                                mwdtpw3$AIC,
+                                mwdtpws3$AIC),
+                 `States=4` = c(m4$AIC,
+                                mdl4$AIC,
+                                mwk4$AIC, 
+                                mt4$AIC,
+                                mwdt4$AIC,
+                                mwdtp4$AIC,
+                                mwdtpw4$AIC,
+                                mwdtpws4$AIC),
+                 `States=5` = c(m5$AIC,
+                                mdl5$AIC,
+                                mwk5$AIC, 
+                                mt5$AIC,
+                                mwdt5$AIC,
+                                mwdtp5$AIC,
+                                mwdtpw5$AIC,
+                                mwdtpws5$AIC))
+
+library(stargazer)
+stargazer(df, summary = FALSE, type = "latex", rownames = FALSE, font.size = "small", header = FALSE)
+
+knitr::kable(df)
+
+```
+
+# Methods
+
+The observed physical activity time series data was agregatted into distinct individual time series based on particular covariates of interest. For example, Male & Female physical activity time series were created to explore differences in physical activity between male & female subjects. The same approach was used for Age (Young vs Old), BMI (High vs. Low), Comorbidites (>2 vs. $\le$ 2), Hospitalization (Yes vs. No), NYHA Class (I/II vs. III/IV), and Physical Activity (> 132 minutes vs $\le$ 132 minutes). This method created 14 aggreate time series based on median physical activity to stratify trends throughout the year based on subject's medical/demographic information. 
+
+```{r, results = "asis"}
+sub <- readRDS("Data/analysis_raw_data.rds")
+
+
+library(finalfit)
+library(kableExtra)
+ex <- c("sex", "agecat", "bmicat", "NYHADichot", "PADichot", "Comorbidity2orLess",
+        "Hospitalized")
+dep <- "inclusion"
+
+t <- sub %>% 
+  group_by(record_id) %>% 
+  slice_head(n =1) %>% 
+  summary_factorlist(dep, ex)
+
+t1 <- t[-c(3,10,13,16,19), c(1,2,4)]
+
+
+t1 
+
+kable(t1, format = "rst")
+```
+
+
+Dynamic Factor Analysis (DFA) was used in an effort to summarize the 14 different time series and identify latent states attributable to specific covariates of a patient. DFA is a technique for identifying common underlying trends from a multivariate time series such that the number of trends, $m$, is less than the total number of time series, $n$. The time series can therefore be modelled as a linear combination of the common trends, a level parameter, other explanatory variables, and a noise component (Zuur 2003). 
+
+Long Format:
+$$y_{it} = z_{i1}\alpha_{1t}+z_{i2}\alpha_{2t}+...+z_{iM}\alpha_{Mt} + e_{it}$$
+Matrix Noation:
+$$y_t = Z\alpha_t+e_t$$
+
+
+
+```{r}
+library(dplyr)
+summaries <- sub %>% 
+  group_by(record_id, sex, bmicat) %>% 
+  summarise(min = min(value),
+            med = median(value),
+            max = max(value),
+            mn = mean(value),
+            sd = sd(value))
+
+
+```
+
+
+Zuur, A. F., R. J. Fryer, I. T. Jolliffe, R. Dekker, and J. J. Beukema. 2003. “Estimating Common Trends in Multivariate Time Series Using Dynamic Factor Analysis.” Environmetrics 14 (7): 665–85.
+
+Dynamic factor analysis to estimate common
+trends in fisheries time series
+A.F. Zuur, I.D. Tuck, and N. Bailey
+
+
+```{r MDS}
+
+the.fit = mwdtp3
+
+R <- coef(the.fit, type = "matrix")$R
+
+d <- cluster::daisy(R, stand = TRUE)
+
+plot(d)
+
+ds <- as.data.frame(cmdscale(d, k = 2))
+
+par(mfrow= c(1,1))
+ds$name <- list("Male", "Female", "Class I/II", "Class III/IV",
+                "Hosp. No", "Hosp. Yes", "Cmbds <=2", "Cmbds >2",
+                "PA<=132", "PA>132", "Age.young", "Age.old", "BMI.low", "BMI.high")
+
+
+library(ggrepel)
+ggplot()+
+  geom_point(data = ds, aes(x = V1, y = V2), size = 3)+
+  geom_text_repel(data = ds, aes(label = name, x = V1, y = V2), size = 5, point.padding = .5, direction = "both")+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))+
+  labs(x = "Axis 1", y = "Axis 2")
+  
+ggsave("MDS.tiff", dpi = 1200)
+
+```
+
+$$\sum_ty_{it}, R^2$$
+
+
+```{r FACTOR LOADINGS AND SSE}
+
+loads <- readRDS("Data/loadings.rds")
+d2 <- readRDS("Data/fits.rds")
+
+wideload <- loads %>% 
+  pivot_wider(names_from = states, values_from = value)
+
+fits <- d2 %>% 
+  select(t, name, type, value, .resids) %>% 
+  pivot_wider(names_from = type, values_from=value) %>% 
+  group_by(name) %>% 
+  summarise(y = sum((Observed-mean(Observed))**2),
+            e = sum((Observed - Fitted)**2),
+            SSE = sum(.resids**2),
+            R = 1-(SSE/y),
+            yiyp = sum((Observed-Fitted)**2),
+            chisq = yiyp/(sd(Observed)**2)) %>% 
+  inner_join(wideload, ., by = c("names"="name")) %>% 
+  select(-e)
+
+fits <- as.data.frame(fits)
+
+
+knitr::kable(fits, digits = 3) %>% 
+  kableExtra::kable_classic_2()
+
+hist(fits$chisq)
+
+
+```
+
+```{r CCA, eval = TRUE}
+library(CCA)
+
+d.state <- MARSS:::tidy.marssMLE(the.fit, type="xtT")
+mets <- readRDS("Data/mets.rds")
+
+states <- d.state %>% 
+  select(.rownames, t, estimate) %>% 
+  pivot_wider(names_from = .rownames, values_from = estimate) %>% 
+  select(-t)
+
+mets2 <- mets
+rownames(mets2) <- mets2$t
+
+mets2 <- mets2 %>% 
+  select(Daylight, Temperature, Snow, Wind, Precipiation)
+
+mets2 <- as.matrix(mets2)
+states <- as.matrix(states)
+
+colnames(states) <- c("State 1", "State 2", "State 3")
+
+correl <- matcor(states, mets2)
+img.matcor(correl, type = 2)
+
+```
+
+```{r}
+CORRFUN <- function(x, type=c('lower', 'upper', 'full', 'flatten'),
+                        graph=TRUE, graphType=c("correlogram", "heatmap"),
+                        col=NULL, ...)
+{
+  library(corrplot)
+  # Helper functions
+  #+++++++++++++++++
+  # Compute the matrix of correlation p-values
+  cor.pmat <- function(x, ...) {
+    mat <- as.matrix(x)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+      for (j in (i + 1):n) {
+        tmp <- cor.test(mat[, i], mat[, j], method = "kendall", ...)
+        p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      }
+    }
+    colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+    p.mat
+  }
+  # Get lower triangle of the matrix
+  getLower.tri<-function(mat){
+    upper<-mat
+    upper[upper.tri(mat)]<-""
+    mat<-as.data.frame(upper)
+    mat
+  }
+  # Get upper triangle of the matrix
+  getUpper.tri<-function(mat){
+    lt<-mat
+    lt[lower.tri(mat)]<-""
+    mat<-as.data.frame(lt)
+    mat
+  }
+  # Get flatten matrix
+  flattenCorrMatrix <- function(cormat, pmat) {
+    ut <- upper.tri(cormat)
+    data.frame(
+      row = rownames(cormat)[row(cormat)[ut]],
+      column = rownames(cormat)[col(cormat)[ut]],
+      cor  =(cormat)[ut],
+      p = pmat[ut]
+    )
+  }
+  # Define color
+  if (is.null(col)) {
+    col <- wesanderson::wes_palette("Zissou1", 100, "continuous")
+  }
+  
+  # Correlation matrix
+  cormat<-signif(cor(x, use = "complete.obs", method = "kendall", ...),2)
+  pmat<-signif(cor.pmat(x, ...),2)
+  # Reorder correlation matrix
+  # ord<-corrMatOrder(cormat, order="A")
+  # cormat<-cormat[ord, ord]
+  # pmat<-pmat[ord, ord]
+  # Replace correlation coeff by symbols
+  sym<-symnum(cormat, abbr.colnames=FALSE)
+  # Correlogram
+  if(graph & graphType[1]=="correlogram"){
+    corrplot(cormat, type=ifelse(type[1]=="flatten", "lower", type[1]),
+             tl.col="black", tl.srt=45,col=col,...)
+  }
+  else if(graphType[1]=="heatmap")
+    heatmap(cormat, col=col, symm=TRUE)
+  # Get lower/upper triangle
+  if(type[1]=="lower"){
+    cormat<-getLower.tri(cormat)
+    pmat<-getLower.tri(pmat)
+  }
+  else if(type[1]=="upper"){
+    cormat<-getUpper.tri(cormat)
+    pmat<-getUpper.tri(pmat)
+    sym=t(sym)
+  }
+  else if(type[1]=="flatten"){
+    cormat<-flattenCorrMatrix(cormat, pmat)
+    pmat=NULL
+    sym=NULL
+  }
+  list(r=cormat, p=pmat, sym=sym)
+}
+
+CORRFUN(cbind(states, mets2))
+```
+
+
+```{r METS&STATES}
+
+corrs <- psych::corr.test(x = states, y = mets2, method = "kendall", adjust = "BH")
+cs <- round(c(corrs$r), 4)
+ps <- c(corrs$p)
+cs
+s <- symnum(ps, cutpoints = c(10e-20, 0.01,0.05,1), symbols = c("***", "**", " "), corr = FALSE)
+
+new <- NULL
+for( i in 1:length(cs)){
+new[i] <- paste(cs[i], s[i], sep = "")  
+}
+
+corr.mat <- matrix(new, nrow = 3, ncol = 5, byrow = FALSE)
+
+rownames(corr.mat) <- colnames(states)
+colnames(corr.mat) <- colnames(mets2)
+
+knitr::kable(noquote(corr.mat)) %>% 
+  kableExtra::kable_styling()
+```
+
+```{r METS&PARAMS, eval = FALSE, results = "asis"}
+
+parms <- t(dat.z)
+
+corrs <- psych::corr.test(x = parms, y = mets2, method = "kendall", adjust = "BH")
+cs <- c(corrs$r)
+ps <- c(corrs$p)
+
+s <- symnum(ps, cutpoints = c(10e-20, 0.01,0.05,1), symbols = c("***", "**", " "), corr = FALSE)
+
+new <- NULL
+for( i in 1:length(cs)){
+new[i] <- paste(cs[i], s[i], sep = "")  
+}
+
+corr.mat <- matrix(new, nrow = ncol(parms), ncol = ncol(mets2), byrow = FALSE)
+
+rownames(corr.mat) <- colnames(parms)
+colnames(corr.mat) <- colnames(mets2)
+
+knitr::kable(corr.mat)
+
+
+stargazer::stargazer(glm(mpg~cyl, data = mtcars), type = "text")
+```
+
+```{r}
+library(tidyr)
+library(dplyr)
+
+sex <- sub %>% 
+  group_by(sex) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = sex)
+
+nyha <- sub %>% 
+  group_by(NYHADichot) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = NYHADichot)
+
+hosp <- sub %>% 
+  group_by(Hospitalized) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = Hospitalized)
+
+cmbd <- sub %>% 
+  group_by(Comorbidity2orLess) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = Comorbidity2orLess)
+
+pa <- sub %>% 
+  group_by(PADichot) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = PADichot)
+
+age <- sub %>% 
+  group_by(agecat) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = agecat)
+
+bmi <- sub %>% 
+  group_by(bmicat) %>% 
+  summarise(mn = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE)) %>% 
+  rename(var = bmicat)
+
+all.df <- rbind(sex, nyha, hosp, cmbd, pa, age, bmi)
+
+saveRDS(all.df, "Data/sumstats.rds")
+
+```
+

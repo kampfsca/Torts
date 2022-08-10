@@ -1,0 +1,74 @@
+---
+title: "DFA Analysis"
+author: "Andy Kampfschulte, MS"
+date: "`r Sys.Date()`"
+output: tint::tintHtml
+---
+
+```{r setup, include=FALSE}
+library(tint)
+# invalidate cache when the package version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tint'))
+options(htmltools.dir.version = FALSE)
+```
+
+# Dynamic Factor Analysis
+
+DFA is a type of dynamic linear model (DLM) which allows the opportunity to identify common underlying trends between multivariate time series.
+
+$$x_t = x_{t-1}+w_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$
+$$y_t = Zx_{t-1}+a+v_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$
+$$x_0 \sim \text{MVN}(\pi,\Lambda)$$
+
+The observations (y) are modeled as a linear combination of hidden trends $x)$ and factor loadings $(Z)$ with offsets $(a)$. Essentially, this an autoregressive form of principal component analysis. We are attempting to take $n$ number of time series and model them in terms of $m$ underlying states, where $m<n$.
+
+The data was broken into subset time-series based on variable values, below are the subsets>
+
+
+```{r, echo = FALSE}
+vars <- data.frame(Variables = c("Sex = Male", "Sex = Female", "NYHA = Class I/II", "NYHA = Class III/IV",
+                            "Hospitalization = No", "Hospitalization = Yes", "Comorbidities <=2", "Comorbidities > 2",
+                            "Physical Activity <= 132", "Physical Activity > 132", "Age < Median Age", "Age >= Median Age", 
+                            "BMI < Median BMI", "BMI >= Median BMI"))
+knitr::kable(vars, row.names = FALSE, align = "c")
+```
+
+## States
+
+Dynamic Factor Analysis was applied to detect $m=4$ hidden states. This seemed to maximize the AICc while keeping the number of states low. An unconstrained covariance matrix was used. 
+
+![](State_graph.png)
+
+A varimax rotation was used to solve for the factor loadings. This seeks a rotation matrix that maximizes the difference between the loadings. We can see in the below graph which variables correspond most strongly to which underlying states.
+
+![](DFA_results.png)
+
+Lastly, the fits obtained from the DFA Fitting were compared against the observed trends. A Generalized Additive Model was used here with a thin-plate spline function to display the observed and fitted lines. We can see that the linear combinations of the four hidden states are able to model the 14 individual time series quite well. There is however, a large amount of variation in the observed values.
+
+![](DFA_vs_observed.png)
+
+## Un-Standardize Trend Lines??
+
+```{r}
+
+dd <- as.data.frame(t(dat))
+dd <- melt(dd)
+
+d2$val2 <- (d2$value+mean(d2$value)*sd(d2$value))
+
+ggplot(d2, aes(t, val2, color = type))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = .5)+
+  geom_point(alpha = .25, size = .7)+
+  facet_wrap(~name, labeller = labeller(name = names.lab))+
+  scale_color_manual(values = pal, aesthetics = "color",
+                     labels = c("Fitted", "Observed"))+
+  theme(legend.position = c(.9,.1),
+        strip.text = element_text(size = 6))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = "DFA Fitted Estimates vs. Observed Values")
+
+
+```
+
+

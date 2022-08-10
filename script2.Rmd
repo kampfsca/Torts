@@ -1,0 +1,1222 @@
+---
+title: "Meteorlogical"
+author: "Andy Kampfschulte"
+date: "3/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r inputs}
+library(foreign)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+library(MARSS)
+
+pal <- wes_palette("Zissou1", 52, "continuous")
+
+df <- read.spss("Data/Dataset 1.1.sav", to.data.frame = TRUE)
+df <- df[which(df$inclusion=="Yes"),]
+
+mets <- data.table::fread("Data/mets.csv")
+
+mets <- mets[which(mets$Included==1),]
+mets <- mets[which(mets$Subject %in% df$record_id), ]
+
+
+for(i in seq(5,369,1)){
+  colnames(mets)[i] <- paste("Daylight_", as.Date("10/31/2016", format = "%m/%d/%Y")+(i-4))
+  colnames(mets)[i+366] <- paste("Temp_", as.Date("10/31/2016", format = "%m/%d/%Y")+(i-4))
+  colnames(mets)[i+366*2] <- paste("Precip_", as.Date("10/31/2016", format = "%m/%d/%Y")+(i-4))
+  colnames(mets)[i+366*3] <- paste("Snow_", as.Date("10/31/2016", format = "%m/%d/%Y")+(i-4))
+  colnames(mets)[i+366*4] <- paste("Wind_", as.Date("10/31/2016", format = "%m/%d/%Y")+(i-4))
+  }
+
+names <- as.data.frame(colnames(mets))
+
+
+mets.long <- reshape(data = mets,
+                     idvar = "Subject",
+                     varying = list(Daylight = c(5:369),
+                                    Temp = c(371:735),
+                                    Precip = c(737:1101),
+                                    Snow = c(1103:1467),
+                                    Wind = c(1469:1833)),
+                     v.names = c("Daylight", "Temp", "Precip", "Snow", "Wind"),
+                     times = seq(as.Date("11/1/2016", format = "%m/%d/%Y"), as.Date("10/31/2017", format = "%m/%d/%Y"), by =1),
+                     direction = "long")
+
+mets.long <- mets.long[,-c(4:8)]
+
+mets.long[,5:9] <- lapply(mets.long[,5:9], as.numeric)
+
+mets.long <- mets.long %>% 
+  group_by(`Wx Station`, time) %>% 
+  summarise(Temp = max(Temp),
+            Daylight = max(Daylight),
+            Snow = max(Snow),
+            Wind = max(Wind),
+            Precip = max(Precip))
+
+#mets.long$name <- format(mets.long$time, "%b_%d_%y")
+mets.longer <- mets.long %>% 
+  pivot_longer(cols = 5:9)
+mets.longer$Wx <- paste("Weather Station", mets.longer$`Wx Station`, sep = " ")
+
+mets.longer2 <- mets.longer %>% 
+  group_by(Wx, time, name) %>% 
+  summarise(value = max(value))
+
+mets.avg <- mets.longer2 %>% 
+  group_by(time, name) %>% 
+  summarise(med = median(value),
+            mean = mean(value, na.rm = TRUE))
+
+p <- wesanderson::wes_palette("Zissou1", 4, "continuous")
+ggplot(mets.longer2)+
+  #geom_line(data = mets.avg, aes(x = time, y = zscore(mean)), alpha = .9, size = .9, colour = "black")+
+  geom_line(aes(x = time, y = zscore(value), group = Wx, colour = Wx), alpha = .7)+
+  facet_grid(name~Wx, scales = "free")+
+  scale_color_manual(aesthetics = "colour", values = p)+
+  theme_bw()+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=-45, hjust = 0.01))
+ggsave("Wx.png", dpi = 1000)
+
+mets.wx <- mets.longer %>% 
+  select(-`Wx Station`, - Included, -Subject) %>% 
+  distinct() %>% 
+  pivot_wider(names_from = Wx, values_from = value, id_cols = c(time, name)) %>% 
+  mutate(med = sum(c(`Weather Station 1`, `Weather Station 2`,`Weather Station 3`,`Weather Station 4`)))
+
+met.mat <- mets.avg %>%
+  select(time, name, mean) %>% 
+  filter(name != "Daylight") %>% 
+  pivot_wider(names_from = time, values_from = mean)
+
+precip <- met.mat[1,] 
+precip <-  as.matrix(precip[1,-1])
+saveRDS(precip, "Data/precip.rds")
+wind <- met.mat[4,]
+wind <-  as.matrix(wind[1,-1])
+saveRDS(wind, "Data/wind.rds")
+snow <- met.mat[2,]
+snow <-  as.matrix(snow[1,-1])
+saveRDS(snow, "Data/snow.rds")
+temp <- met.mat[3,]
+temp <-  as.matrix(temp[1,-1])
+saveRDS(temp, "Data/temp.rds")
+
+daylight <- sub[which(sub$record_id %in% ids$record_id),c(1,28,33)] %>% 
+  pivot_wider(names_from = name, values_from = daylength) 
+daylight <- as.matrix(daylight[1,-1])
+saveRDS(daylight, "Data/daylight.rds")
+
+sub <- readRDS("Data/analysis_raw_data.rds")
+sub$wkend2 <- ifelse(sub$wkend %in% c(6,7), 1, 0)
+day <- sub[which(sub$record_id %in% ids$record_id),c(1,28,35)] %>% 
+  pivot_wider(names_from = name, values_from = wkend) 
+day <- as.matrix(day[1,-1])
+
+wkend <- sub[which(sub$record_id %in% ids$record_id),c(1,28,38)] %>% 
+  pivot_wider(names_from = name, values_from = wkend2) 
+wkend <- as.matrix(wkend[1,-1])
+saveRDS(wkend, "Data/wkend.rds")
+```
+
+
+
+```{r}
+dat.z <- readRDS("Data/analysis_data.rds")
+model.list.dne.2 = list(m=4, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=TRUE)
+
+marss = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list)
+saveRDS(marss, file = "Data/marss.rds")
+
+marss.dl = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight))
+saveRDS(marss.dl, file = "Data/marss_dl.rds")
+
+marss.day = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(day))
+saveRDS(marss.day, file = "Data/marss_day.rds")
+
+marss.wkend = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend))
+
+saveRDS(marss.wkend, file = "Data/marss_wkend.rds")
+
+# marss.dlday = MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(day, daylight))
+
+marss.dlwkend = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight))
+
+saveRDS(marss.dlwkend, file = "Data/marss_wkend.rds")
+
+print(cbind(model = c("blank", "Daylight", "Day", "Weekend","Daylight & Day", "Daylight & Weekend"),
+            AICc = round(c(marss$AICc, 
+                           marss.dl$AICc, 
+                           marss.day$AICc, 
+                           marss.wkend$AICc, 
+                           marss.dlday$AICc,
+                           marss.dlwkend$AICc)),
+            LogLik = round(c(marss$logLik, 
+                           marss.dl$logLik, 
+                           marss.day$logLik, 
+                           marss.wkend$logLik, 
+                           marss.dlday$logLik,
+                           marss.dlwkend$logLik))), 
+      quote = FALSE)
+
+################################################################################
+
+marss.allmet = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(daylight, precip, wind, snow, temp))
+saveRDS(marss.allmet, file = "Data/marss_allmet.rds")
+
+marss.all = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, wind, snow, precip))
+saveRDS(marss.all, file = "Data/marss_all.rds")
+
+marss.wdt = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight,temp))
+
+saveRDS(marss.wdt, file = "Data/marss_wdt.rds")
+
+marss.wdtp = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+saveRDS(marss.wdtp, file = "Data/marss_wdtp.rds")
+
+
+print(cbind(model = c("All Meteological", "ALL", "Weekend Daylight Temp", "Weekend Daylight Temp Precip"),
+            AICc = round(c(marss.allmet$AICc, 
+                           marss.all$AICc, 
+                           marss.wdt$AICc, 
+                           marss.wdtp$AICc)),
+            AIC = round(c(marss.allmet$AIC, 
+                           marss.all$AIC, 
+                           marss.wdt$AIC, 
+                           marss.wdtp$AIC)),
+            LogLik = round(c(marss.allmet$logLik, 
+                           marss.all$logLik, 
+                           marss.wdt$logLik, 
+                           marss.wdtp$logLik))), 
+      quote = FALSE)
+###################################################################################
+# marss.met <- MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(daylight, temp, precip, snow, wind))
+# 
+# saveRDS(marss.met, file = "Data/met_models.rds")
+# 
+# marss.metdt <- MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(daylight, temp))
+# saveRDS(marss.metdt, file = "Data/met_models_dt.rds")
+# 
+# marss.metdtp <- MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(daylight, temp, precip))
+# saveRDS(marss.metdtp, file = "Data/met_models_dtp.rds")
+# 
+# marss.metdtpw <- MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(daylight, temp, precip, wind))
+# saveRDS(marss.metdtpw, file = "Data/met_models_dtpw.rds")
+# 
+# marss.metddtp <- MARSS(dat.z, model=model.list.dne.2,
+#     z.score=TRUE, form="dfa", control=cntl.list,
+#     covariates = rbind(day, daylight, temp, precip))
+# saveRDS(marss.metddtp, file = "Data/met_models_ddtp.rds")
+
+marss.metddtp <- readRDS(file = "Data/met_models_ddtp.rds")
+dlday <- readRDS("Modelling/MARSS_m4.rds")
+
+print(cbind(model = c("Daylight & Day", 
+                      "Dayligh & Temp", 
+                      "Daylight, Temp, & Precip", 
+                      "Daylight, Temp, Precip, & Wind", 
+                      "All",
+                      "All + Day"), 
+    AICc = round(c(dlday$AICc, 
+                   marss.metdt$AICc, 
+                   marss.metdtp$AICc, 
+                   marss.metdtpw$AICc,
+                   marss.met$AICc, 
+                   marss.metddtp$AICc)),
+    LogLik = round(c(dlday$logLik, 
+                     marss.metdt$logLik, 
+                     marss.metdtp$logLik, 
+                     marss.metdtpw$logLik, 
+                     marss.met$logLik,
+                     marss.metddtp$logLik))), 
+    quote = FALSE)
+
+############################### FOURIER Series
+TT <- 365
+period <- 12
+cos.t <- cos(2 * pi * seq(TT)/period)
+sin.t <- sin(2 * pi * seq(TT)/period)
+c.Four <- rbind(cos.t, sin.t)
+plot(c.Four)
+
+marss.wdtpf = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip, c.Four))
+saveRDS(marss.wdtpf, file = "Data/marss_wdtpFourier.rds")
+
+marss.wtpf = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, temp, precip, c.Four))
+saveRDS(marss.wtpf, file = "Data/marss_wdtpFourier.rds")
+
+marss.wpf = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, precip, c.Four))
+saveRDS(marss.wpf, file = "Data/marss_wpFourier.rds")
+
+print(cbind(model = c("WDTPFourier", 
+                      "WTPF", 
+                      "WPF"), 
+    AICc = round(c(marss.wdtpf$AICc, 
+                   marss.wtpf$AICc, 
+                   marss.wpf$AICc))), 
+    quote = FALSE)
+############################################################################
+############# EXPLORING STATES
+
+model.list.dne.2 = list(m=3, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=TRUE)
+
+
+marss.wdtp3 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+saveRDS(marss.wdtp3, file = "Data/marss_wdtp3.rds")
+
+
+model.list.dne.2 = list(m=3, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=TRUE)
+
+
+marss.wdtp5 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+saveRDS(marss.wdtp5, file = "Data/marss_wdtp5.rds")
+
+model.list.dne.2 = list(m=2, R="unconstrained", tinitx=1)
+cntl.list <- list(minit=200, maxit=12000, allow.degen=TRUE)
+
+marss.wdtp2 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=TRUE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+saveRDS(marss.wdtp2, file = "Data/marss_wdtp2.rds")
+
+marss.wdtp3 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list,
+    covariates = rbind(wkend, daylight, temp, precip))
+
+saveRDS(marss.wdtp3, file = "Data/marss_wdtps3.rds")
+
+
+marss.wdtp5$AICc
+marss.wdtp$AICc
+marss.wdtp3$AICc
+marss.wdtps3$AICc
+marss.wdtp2$AICc
+
+
+marss3 = MARSS(dat.z, model=model.list.dne.2,
+    z.score=FALSE, form="dfa", control=cntl.list)
+```
+
+
+
+
+```{r}
+
+# Rotations with diagonal and unequal structure
+# big.maxit.cntl.list = list(minit=200, maxit=5000, allow.degen=FALSE)
+# model.list = list(m=6, R="equalvarcov")
+the.fit = mwdtp3
+
+
+###################################################
+### code chunk number 29: Cs21_varimax
+###################################################
+# get the inverse of the rotation matrix
+Z.est = coef(the.fit, type="matrix")$Z
+
+H.inv = 1
+if(ncol(Z.est)>1) H.inv = varimax(coef(the.fit, type="matrix")$Z)$rotmat
+
+
+###################################################
+### code chunk number 30: Cs22_rotations
+###################################################
+# rotate factor loadings
+Z.rot = Z.est %*% H.inv   
+# rotate trends
+trends.rot = solve(H.inv) %*% the.fit$states
+
+
+###################################################
+### code chunk number 31: Cs23_plotfacloadings
+###################################################
+#plot the factor loadings
+N.ts <- dim(dat.z)[1]
+spp = rownames(dat.z)
+minZ = 0.005
+m=dim(trends.rot)[1]
+ylims = c(-1.1*max(abs(Z.rot)), 1.1*max(abs(Z.rot)))
+par(mfrow=c(ceiling(m/2),2), mar=c(3,4,1.5,0.5), oma=c(0.4,1,1,1))
+for(i in 1:m) {
+	plot(c(1:N.ts)[abs(Z.rot[,i])>minZ], as.vector(Z.rot[abs(Z.rot[,i])>minZ,i]),
+		type="h", lwd=2, xlab="", ylab="", xaxt="n", ylim=ylims, xlim=c(0,N.ts+1))
+	for(j in 1:N.ts) {
+		if(Z.rot[j,i] > minZ) {text(j, -0.05, spp[j], srt=90, adj=1, cex=0.9)}
+		if(Z.rot[j,i] < -minZ) {text(j, 0.05, spp[j], srt=90, adj=0, cex=0.9)}
+	abline(h=0, lwd=1, col="gray")
+    } # end j loop
+    mtext(paste("Factor loadings on trend",i,sep=" "),side=3,line=.5)
+} # end i loop
+
+```
+
+```{r}
+library(scales)
+library(ggplot2)
+
+
+loads <- as.data.frame(Z.rot)
+colnames(loads) <- c("State 1", "State 2", "State 3")
+loads$names <- row.names(dat)
+
+loads <- pivot_longer(loads, cols = 1:3, names_to = "states")
+ylim <- c(.00, 0.10)
+
+saveRDS(loads, "Data/loadings.rds")
+
+trendlines <- as.data.frame(t(trends.rot))
+colnames(trendlines) <- c("State 1", "State 2", "State 3")
+
+ylim2 <- c(-35,12)
+
+
+library(ggpubr)
+
+pal <- wesanderson::wes_palette("Zissou1", 3, "continuous")
+gg3.1 <- ggplot(loads, aes(x = reorder(names,-value), y = value, fill = states))+
+  geom_bar(stat = "identity") +
+  facet_wrap(~states, nrow = 1, scales = "free_x")+
+  theme_bw()+
+  theme(legend.position = "none",
+        plot.margin = margin(.2,.5, .5, .5, "cm"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1))+
+  scale_y_continuous(limits = ylim)+
+  scale_color_manual(aesthetics = "fill", values = pal)+
+  labs(x = "Factors", y = "Loadings")
+
+
+
+trendlines$t <- seq(1,365,1)
+trends2 <- pivot_longer(trendlines, cols = 1:3)
+gg3 <- ggplot(trends2, aes(y = value, x = t, color = name))+
+  geom_line(size = 2)+
+  facet_wrap(~name, nrow = 1)+
+  scale_color_manual(aesthetics = "color", values = pal)+
+  theme_bw()+
+  theme(legend.position = "none",
+        plot.margin = margin(.2,.5,.5, .5, "cm"))+
+  labs(x = "Day", y ="Physical Activity (z-score)")
+
+ggarrange(ggarrange(gg3.1, gg3, ncol=1,nrow=2, widths = c(.5, .5)))
+
+ggsave("DFA_results_Wx.png", dpi = 1200)
+
+```
+
+
+```{r DFA Fits and factor loadings}
+###################################################
+### code chunk number 32: Cs24_plottrends
+###################################################
+# get ts of trends
+ts.trends = t(trends.rot)
+par(mfrow=c(ceiling(dim(ts.trends)[2]/2),2), mar=c(3,4,1.5,0.5), oma=c(0.4,1,1,1))
+# loop over each trend
+for(i in 1:dim(ts.trends)[2]) {
+	# set up plot area
+	plot(ts.trends[,i],
+		ylim=c(-1.1,1.1)*max(abs(ts.trends)), 
+		type="n", lwd=2, bty="L", 
+		xlab="", ylab="", xaxt="n", yaxt="n")
+	# draw zero-line
+	abline(h=0, col="gray")
+	# plot trend line
+	par(new=TRUE)
+	plot(ts.trends[,i],
+		ylim=c(-1.1,1.1)*max(abs(ts.trends)), 
+		type="l", lwd=2, bty="L", 
+		xlab="", ylab="", xaxt="n")
+	# add panel labels
+	mtext(paste("Trend",i,sep=" "), side=3, line=0.5)
+	#axis(1,12*(0:dim(dat.spp.1980)[2])+1,1980+0:dim(dat.spp.1980)[2])
+	} # end i loop (trends)
+
+
+###################################################
+### code chunk number 33: Cs25_func_get_DFA_fits
+###################################################
+getDFAfits <- function(MLEobj, alpha=0.05, covariates=NULL) {
+  fits <- list()
+  Ey <- MARSShatyt(MLEobj) # for var() calcs
+  ZZ <- coef(MLEobj, type="matrix")$Z # estimated Z
+  nn <- nrow(ZZ) # number of obs ts
+  mm <- ncol(ZZ) # number of factors/states
+  TT <- ncol(Ey$ytT)  # number of time steps
+  ## check for covars
+  if(!is.null(covariates)) {
+    DD <- coef(MLEobj, type="matrix")$D
+    cov_eff <- DD %*% covariates
+  } else {
+    cov_eff <- matrix(0, nn, TT)
+  }
+  ## model expectation
+  fits$ex <- ZZ %*% MLEobj$states + cov_eff
+  ## Var in model fits
+  VtT <- MARSSkfss(MLEobj)$VtT
+  VV <- NULL
+  for(tt in 1:TT) {
+    RZVZ <- coef(MLEobj, type="matrix")$R - ZZ%*%VtT[,,tt]%*%t(ZZ)
+    SS <- Ey$yxtT[,,tt] - Ey$ytT[,tt,drop=FALSE] %*% t(MLEobj$states[,tt,drop=FALSE])
+    VV <- cbind(VV,diag(RZVZ + SS%*%t(ZZ) + ZZ%*%t(SS)))
+  }
+  SE <- sqrt(VV)
+  ## upper & lower (1-alpha)% CI
+  fits$up <- qnorm(1-alpha/2)*SE + fits$ex
+  fits$lo <- qnorm(alpha/2)*SE + fits$ex
+  return(fits)
+}
+
+
+###################################################
+### code chunk number 34: Cs25b_get_DFA_fits
+###################################################
+fit.b = getDFAfits(the.fit, alpha = 0.05, covariates = rbind(wkend, daylight, temp, precip))
+
+
+###################################################
+### code chunk number 35: Cs25c_plotbestfits
+###################################################
+# plot the fits
+ylbl = rownames(dat.z)
+w_ts = seq(dim(dat.z)[2])
+par(mfcol=c(7,2), mar=c(1,4,1,1), oma=c(0.4,1,1,1))
+for(i in 1:N.ts) {
+  up <- fit.b$up[i,]
+  mn <- fit.b$ex[i,]
+  lo <- fit.b$lo[i,]
+  plot(w_ts, mn, xlab="", ylab=ylbl[i], xaxt="n", type="n", cex.lab=1.2,
+       ylim = c(min(lo),max(up)))
+  #axis(1,12*(0:dim(dat.z)[2])+1,1980+0:dim(dat.z)[2])
+  points(w_ts, dat.z[i,], pch=16, col="blue")
+  lines(w_ts, up, col="darkgray")
+  lines(w_ts, mn, col="black", lwd=2)
+  lines(w_ts, lo, col="darkgray")
+}
+
+
+
+
+```
+
+
+```{r Plots of Observed.Fitted}
+
+###################################################
+### code chunk number 36: Cs25d_plotwithaugment
+###################################################
+require(broom)
+require(ggplot2)
+library(dplyr)
+library(tidyr)
+library(wesanderson)
+theme_set(theme_bw()) 
+d <- augment(the.fit,interval="confidence")
+d.names <- data.frame(`.rownames` = unique(d$.rownames),
+                      name = rownames(dat))
+d <- left_join(d,d.names, by = ".rownames")
+
+ggplot(data = d) + 
+  #geom_line(aes(t, .fitted)) +
+  #geom_line(aes(t, .resids), color = pal[50], alpha = .5)+
+  geom_smooth(aes(t,y), stat = "smooth")+
+  geom_smooth(aes(t,.fitted), stat = "smooth", color = "red")+
+  geom_point(aes(t, .fitted)) +
+  geom_ribbon(aes(x=t, ymin=.conf.low, ymax=.conf.up), linetype=2, alpha=0.2) +
+  facet_wrap( ~ name) +
+  xlab("Time Step") + ylab("Count")
+
+################################################################################
+d2 <- pivot_longer(d, 3:4, names_to = "type")
+saveRDS(d2, "Data/fits.rds")
+pal <- wes_palette("Zissou1", 2, "continuous")
+names.lab = c("Age > 69", "Age <= 69",
+         "BMI > 30", "BMI <=30",
+         "NYHA I/II", "NYHA III/IV",
+         "2 or Less Comorbidities", "More than 2 Comorbidities",
+         "Female", "Not Hospitalized", "Hospitalized",
+         "Male", "P.A.<=132", "P.A.>132")
+names(names.lab) <- sort(rownames(dat))
+
+ggplot(d2, aes(t,value, color = type))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.01, size = .5)+
+  geom_point(alpha = .25, size = .5)+
+  facet_wrap(~name, labeller = labeller(name = names.lab))+
+  scale_color_manual(values = pal, aesthetics = "color",
+                     labels = c("Fitted", "Observed"))+
+  theme(legend.position = c(.9,.1),
+        strip.text = element_text(size = 6))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = "DFA Fitted Estimates vs. Observed Values")
+
+
+ggsave("DFA_vs_ObservedWx.png", dpi = 1200)
+
+
+########################################################################################
+
+library(gridExtra)
+
+d2$var <- ifelse(d2$.rownames %in% c("Male", "Female"), "Gender",
+                 ifelse(d2$.rownames %in% c("Class I/II", "Class III/IV"), "NYHA",
+                        ifelse(d2$.rownames %in% c("Hosp. Yes", "Hosp. No"), "Hospitalization",
+                               ifelse(d2$.rownames %in% c("Cmbds <=2", "Cmbds >2"), "Comorbidities",
+                                      ifelse(d2$.rownames %in% c("PA<=132", "PA>132"), "Physical Activity",
+                                             ifelse(d2$.rownames %in% c("Age.young", "Age.old"), "Age",
+                                                    "BMI"))))))
+d2$level <- ifelse(d2$name %in% c("Male", 
+                                  "Class I/II", 
+                                  "Hosp. No", 
+                                  "Cmbds <=2", 
+                                  "PA<=132", 
+                                  "Age.young", 
+                                  "BMI.low"), 
+                   "first","second")
+
+d2$type <- factor(d2$type,
+                  levels = c(".fitted", "y"),
+                  labels = c("Fitted", "Observed"))
+```
+
+```{r}
+pal <- wes_palette("Zissou1", 2, "continuous") ## Palette
+leg.pos <- c(.30,.95) ## Legend Position
+mars <- c(.5,.1,1.0,.1) ## Plot Margins
+var.list <- list("Age", "BMI", "Comorbidities", "Gender", "Hospitalization", "NYHA", "Physical Activity") ## Variables
+
+gg1 <- ggplot(d2[d2$var==var.list[1], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(x = "Time (days)",
+       y =  "Patient Activity: Minutes per Day (z-score)",
+       title = " ")
+
+gg2 <- ggplot(d2[d2$var==var.list[2], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = " ")
+
+gg3 <- ggplot(d2[d2$var==var.list[3], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = " ")
+
+gg4 <- ggplot(d2[d2$var==var.list[4], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(c(.5,.1,.5,.1), "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = "  ")
+
+gg5 <- ggplot(d2[d2$var==var.list[5], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = " ")
+
+gg6 <- ggplot(d2[d2$var==var.list[6], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Activity (z-score)",
+       title = " ")
+
+gg7 <- ggplot(d2[d2$var==var.list[7], ], aes(t,value, group = level, color = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(type~var)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(-3.5,3.5))+
+  labs(color = "Fit Type", x = "Time (days)",
+       y = "Patient Activity: Minutes per Day (z-score)",
+       title = " ")
+
+bam <- grid.arrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7, ncol = 7,
+             widths = c(.59,.5,.5,.5,.5,.5,.55))
+
+
+ggsave("DFA_vs_Observed2Wx.png", plot = bam, dpi = 1200)
+
+
+################################################################################
+
+d.state <- MARSS:::tidy.marssMLE(the.fit, type="xtT")
+
+pal <- wes_palette("Zissou1", 3, "continuous")
+
+met2 <- mets %>% 
+  select(Daylight, Temperature, t) %>%
+  pivot_longer(1:2)
+
+colnames(met2) <- c("t", ".rownames", "estimate")
+met2$std.error <- 0
+met2$conf.low <- 0
+met2$conf.high <- 0
+met2$type <- met2$.rownames
+
+d.state$type <- "State"
+d.s.met <- rbind(d.state, met2)
+
+d.s.met$type <- factor(d.s.met$type)
+d.s.met$type <- relevel(d.s.met$type, ref = "State")
+
+ggplot(data = d.state) + 
+  geom_line(aes(t, estimate, color = .rownames), size = 2, alpha = .7) +
+  geom_line(data = mets, aes(x = t, y = zscore(Daylight)*8), color = "midnightblue", size = 2, alpha = .7)+
+  geom_ribbon(aes(x=t, ymin=conf.low, ymax=conf.high, group = .rownames), linetype=0, alpha=0.05)+
+  scale_y_continuous(name = "First Axis",
+                     sec.axis = sec_axis(~./9, name = "Second Axis"))+
+  scale_color_manual(values = pal, aesthetics = "color",
+                     labels = c("State 1", "State 2", "State 3", "State 4"))+
+  xlab("Time Step") + ylab("Count")+
+  labs(title = "Underlying States", color = "Term")
+
+
+
+ggplot() + 
+  geom_line(data = d.s.met, aes(t, estimate, color = .rownames), size = 2, alpha = .7) +
+  geom_ribbon(data = d.s.met, aes(x=t, ymin=conf.low, ymax=conf.high, group = .rownames), linetype=0, alpha=0.05)+
+  facet_wrap(~type, nrow = 4, scales = "free_y")+
+  scale_y_continuous()+
+  scale_color_manual(values = c(pal[1], pal[1], pal), aesthetics = "color",
+                     labels = c("Daylight", "Temperature", "State 1", "State 2", "State 3"))+
+  xlab("Time Step") + ylab("Value")+
+  labs(title = "Underlying States", color = "Term")
+
+ggsave("State_graphWx.png", dpi = 1200)
+
+state.wide <- d.state %>% 
+  select(.rownames, estimate, t) %>% 
+  pivot_wider(names_from = .rownames, values_from = estimate)
+
+ds <- cbind(state.wide, mets)
+
+ggplot(data = ds, aes(x = Daylight, y = X1))+
+  geom_point()
+
+datw <- as.data.frame(t(dat.z))
+all <- cbind(datw, state.wide)
+all <- cbind(all, t(daylight), t(precip), t(temp))
+
+plot(all[,c(1:15,20)])
+plot(state.wide$X1, state.wide$X2, type = "l")
+
+aic <- MARSSaic(marss.wdtp, output = c("AICi"))
+MARSS:::plot.marssMLE(marss.wdtp3)
+```
+
+
+
+```{r TRANSFORMING Zs}
+
+allex <- as.data.frame(t(fit.b[[1]]))
+colnames(allex) <- rownames(dat.z)
+allex$date <- rownames(allex)
+allex$date <- as.Date(allex$date, format = "%b_%d_%y")
+allex <-  pivot_longer(allex, cols = 1:14)
+
+ss <- readRDS("Data/sumstats.rds")
+
+names <- rownames(dat.z)
+
+ss$name <- names
+ss$type <- c("Gender","Gender", "NYHA", "NYHA", "Hospitalization", "Hospitalization", 
+             "Comorbidities", "Comorbidities", "Physical Activity", "Physical Activity", 
+             "Age", "Age", "BMI", "BMI")
+
+
+eh <- left_join(allex, ss, by = "name")
+
+eh$Fitted <- (eh$value*sd(dat))+mean(dat)
+obs <- as.data.frame(t(dat.z))
+obs$date <- as.Date(rownames(obs), format = "%Y-%m-%d")
+obs <- pivot_longer(obs, cols = 1:14, values_to = "obs")
+
+full <- inner_join(eh, obs, by = c("date", "name"))
+full$Observed <- (full$obs*sd(dat))+mean(dat)
+full.l <- full %>% 
+  pivot_longer(cols = c("Observed", "Fitted"), names_to = "obex", values_to = "val")
+
+pal <- wes_palette("Zissou1", 2, "continuous") ## Palette
+leg.pos <- c(.30,.95) ## Legend Position
+mars <- c(.5,.05,1.0,.05) ## Plot Margins
+var.list <- list("Age", "BMI", "Comorbidities", "Gender", "Hospitalization", "NYHA", "Physical Activity") ## Variables
+
+gg1 <- ggplot(full.l[full.l$type==var.list[1], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        strip.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "Physical Activity (min/day)",
+       title = " ")
+
+gg2 <- ggplot(full.l[full.l$type==var.list[2], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+gg3 <- ggplot(full.l[full.l$type==var.list[3], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+
+gg4 <- ggplot(full.l[full.l$type==var.list[4], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+
+gg5 <- ggplot(full.l[full.l$type==var.list[5], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+
+gg6 <- ggplot(full.l[full.l$type==var.list[6], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,300))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+
+gg7 <- ggplot(full.l[full.l$type==var.list[7], ], aes(x = date, y = val, colour = name))+
+  geom_smooth(stat = "smooth", method = "gam",formula = y ~ s(x, bs = "tp"), alpha = 0.1, size = 1)+
+  geom_point(alpha = .2, size = .4)+
+  geom_line(size = .2, alpha = .2)+
+  facet_grid(obex~type)+
+  scale_color_manual(values = rep(pal,7), aesthetics = "color")+
+  theme(strip.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = -65, hjust = .1),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 6),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.position = leg.pos,
+        plot.margin = unit(mars, "cm"))+
+  scale_y_continuous(limits = c(0,400))+
+  scale_x_date(date_labels = "%b '%y")+
+  labs(x = "Time (days)",
+       y =  "",
+       title = " ")
+
+
+bam <- grid.arrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7, ncol = 7,
+             widths = c(.59,.5,.5,.5,.5,.5,.55))
+
+
+ggsave("DFA_vs_Observed2Wx_noz.png", plot = bam, dpi = 1200,
+       height = 8, width = 12)
+```
+
+
+
+
+
+```{r}
+
+C <- "unconstrained"
+# Each person has unique density-dependence
+B <- "diagonal and unequal"
+# Assume independent process errors
+Q <- "diagonal and unequal"
+# We have demeaned the data & are fitting a mean-reverting
+# model by estimating a diagonal B, thus
+U <- "zero"
+# Each obs time series is associated with only one process
+Z <- "identity"
+# The data are demeaned & fluctuate around a mean
+A <- "zero"
+# We assume observation errors are independent, but they have
+# similar variance due to similar collection methods
+R <- "diagonal and equal"
+# We are not including covariate effects in the obs equation
+D <- "zero"
+d <- "zero"
+TT <- 365
+period <- 12
+cos.t <- cos(2 * pi * seq(TT)/period)
+sin.t <- sin(2 * pi * seq(TT)/period)
+c.Four <- rbind(cos.t, sin.t)
+
+model.list <- list(B = B, U = U, Q = Q, Z = Z, A = A, R = R, 
+    C = C, c = rbind(c.Four, temp, precip, day, daylight), D = D, d = d)
+seas.mod <- MARSS(dat.z, model = model.list, control = list(maxit = 1500))
+
+C.3 <- coef(seas.mod, type = "matrix")$C
+# The time series of net seasonal effects
+seas.3 <- C.3 %*% c.Four[, 1:period]
+rownames(seas.3) <- rownames(dat.z)
+colnames(seas.3) <- month.abb
+
+par(mfrow = c(1,1))
+matplot(t(seas.3),type="l",bty="n",xaxt="n",ylab="Fourier", col=1:10)
+axis(1,labels=month.abb, at=1:12,las=2,cex.axis=0.75)
+legend("topright", legend = rownames(dat.z[1:10,]), lty=1:5, cex=0.6, col=1:10)
+
+seas.mod$AICc
+
+for (i in 1:3) {
+    dev.new()
+    modn <- paste("seas.mod", i, sep = ".")
+    for (j in 1:5) {
+        plot.ts(residuals(get(modn))$model.residuals[j, ], ylab = "Residual", 
+            main = phytos[j])
+        abline(h = 0, lty = "dashed")
+        acf(residuals(get(modn))$model.residuals[j, ], na.action = na.pass)
+    }
+}
+
+t <- MARSS:::tidy.marssMLE(seas.mod, type = "xtT")
+pal <- wesanderson::wes_palette("Zissou1", 14, "continuous")
+ggplot(data = t) + 
+  geom_line(aes(t, estimate, color = .rownames), size = 2, alpha = .7) +
+  geom_ribbon(aes(x=t, ymin=conf.low, ymax=conf.high, group = .rownames), linetype=0, alpha=0.01)+
+  scale_color_manual(values = pal, aesthetics = "color")+
+  xlab("Time Step") + ylab("Count")+
+  labs(title = "Underlying States", color = "Term")+
+  theme_bw()
+
+
+```
+
+```{r}
+get_DFA_fits <- function(MLEobj, dd = NULL, alpha = 0.05) {
+    ## empty list for results
+    fits <- list()
+    ## extra stuff for var() calcs
+    Ey <- MARSS:::MARSShatyt(MLEobj)
+    ## model params
+    ZZ <- coef(MLEobj, type = "matrix")$Z
+    ## number of obs ts
+    nn <- dim(Ey$ytT)[1]
+    ## number of time steps
+    TT <- dim(Ey$ytT)[2]
+    ## get the inverse of the rotation matrix
+    H_inv <- varimax(ZZ)$rotmat
+    ## check for covars
+    if (!is.null(dd)) {
+        DD <- coef(MLEobj, type = "matrix")$D
+        ## model expectation
+        fits$ex <- ZZ %*% H_inv %*% MLEobj$states + DD %*% dd
+    } else {
+        ## model expectation
+        fits$ex <- ZZ %*% H_inv %*% MLEobj$states
+    }
+    ## Var in model fits
+    VtT <- MARSSkfss(MLEobj)$VtT
+    VV <- NULL
+    for (tt in 1:TT) {
+        RZVZ <- coef(MLEobj, type = "matrix")$R - ZZ %*% VtT[, 
+            , tt] %*% t(ZZ)
+        SS <- Ey$yxtT[, , tt] - Ey$ytT[, tt, drop = FALSE] %*% 
+            t(MLEobj$states[, tt, drop = FALSE])
+        VV <- cbind(VV, diag(RZVZ + SS %*% t(ZZ) + ZZ %*% t(SS)))
+    }
+    SE <- sqrt(VV)
+    ## upper & lower (1-alpha)% CI
+    fits$up <- qnorm(1 - alpha/2) * SE + fits$ex
+    fits$lo <- qnorm(alpha/2) * SE + fits$ex
+    return(fits)
+}
+dd <- rbind(daylight, temp, precip, wkend)
+mod_fit <- get_DFA_fits(mwdtp3, dd = dd)
+
+
+ex <- as.data.frame(t(mod_fit$ex))
+colnames(ex) <- rownames(dat.z)
+ex$t <- seq(1, nrow(ex))
+ex <- ex %>% pivot_longer(col=1:14)
+
+pts <- as.data.frame(t(dat.z))
+pts$t <- seq(1,nrow(pts))
+pts <- pts %>% 
+  pivot_longer(cols = 1:14)
+
+ggplot()+
+  geom_line(data = ex, aes(x = t, y = value, colour = name), size = .9)+
+  geom_point(data = pts, aes(x = t, y = value, colour = name), size = .5)+
+  facet_wrap(~name)+
+  theme_bw()
+
+## plot the fits
+ylbl <- rownames(dat.z)
+par(mfrow = c(N_ts, 1), mai = c(0,0,0,0), omi = c(0, 
+    0, 0, 0))
+for (i in 1:N_ts) {
+    up <- mod_fit$up[i, ]
+    mn <- mod_fit$ex[i, ]
+    lo <- mod_fit$lo[i, ]
+    plot(w_ts, mn, xlab = "", ylab = ylbl[i], xaxt = "n", type = "n", 
+        cex.lab = 1.2, ylim = c(min(lo), max(up)))
+    #axis(1, 12 * (0:dim(dat.z)[2]) + 1, 1 + 0:dim(dat.z)[2])
+    points(w_ts, dat[i, ], pch = 16, col = pal)
+    lines(w_ts, up, col = "darkgray")
+    lines(w_ts, mn, col = "black", lwd = 2)
+    lines(w_ts, lo, col = "darkgray")
+}
+
+
+```
