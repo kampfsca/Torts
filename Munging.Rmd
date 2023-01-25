@@ -14,7 +14,6 @@ library(tint)
 options(htmltools.dir.version = FALSE)
 ```
 
-
 ```{r}
 
 pacs <- c("ggplot2",
@@ -31,7 +30,6 @@ pal <- function(x){
 }
 
 ```
-
 
 ```{r}
 
@@ -98,9 +96,3 @@ ggsave(plot = ggdem, filename = "plots/DEM_sample.png", dpi = 500,
 
 
 ```
-
-
-
-
-
-

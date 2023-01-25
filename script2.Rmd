@@ -9,7 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 ```{r inputs}
 library(foreign)
 library(tidyr)
@@ -128,8 +127,6 @@ wkend <- sub[which(sub$record_id %in% ids$record_id),c(1,28,38)] %>%
 wkend <- as.matrix(wkend[1,-1])
 saveRDS(wkend, "Data/wkend.rds")
 ```
-
-
 
 ```{r}
 dat.z <- readRDS("Data/analysis_data.rds")
@@ -351,9 +348,6 @@ marss3 = MARSS(dat.z, model=model.list.dne.2,
     z.score=FALSE, form="dfa", control=cntl.list)
 ```
 
-
-
-
 ```{r}
 
 # Rotations with diagonal and unequal structure
@@ -457,7 +451,6 @@ ggsave("DFA_results_Wx.png", dpi = 1200)
 
 ```
 
-
 ```{r DFA Fits and factor loadings}
 ###################################################
 ### code chunk number 32: Cs24_plottrends
@@ -551,7 +544,6 @@ for(i in 1:N.ts) {
 
 
 ```
-
 
 ```{r Plots of Observed.Fitted}
 
@@ -863,8 +855,6 @@ aic <- MARSSaic(marss.wdtp, output = c("AICi"))
 MARSS:::plot.marssMLE(marss.wdtp3)
 ```
 
-
-
 ```{r TRANSFORMING Zs}
 
 allex <- as.data.frame(t(fit.b[[1]]))
@@ -1070,10 +1060,6 @@ bam <- grid.arrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7, ncol = 7,
 ggsave("DFA_vs_Observed2Wx_noz.png", plot = bam, dpi = 1200,
        height = 8, width = 12)
 ```
-
-
-
-
 
 ```{r}
 

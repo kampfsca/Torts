@@ -9,20 +9,15 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
-
 # Dynamic Factor Analysis
 
 DFA is a type of dynamic linear model (DLM) which allows the opportunity to identify common underlying trends between multivariate time series.
 
-$$x_t = x_{t-1}+w_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$
-$$y_t = Zx_{t-1}+a+v_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$
-$$x_0 \sim \text{MVN}(\pi,\Lambda)$$
+$$x_t = x_{t-1}+w_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$ $$y_t = Zx_{t-1}+a+v_t \text{ where } w_t \sim \text{MVN}(0,\bf{Q}) $$ $$x_0 \sim \text{MVN}(\pi,\Lambda)$$
 
 The observations (y) are modeled as a linear combination of hidden trends $x)$ and factor loadings $(Z)$ with offsets $(a)$. Essentially, this an autoregressive form of principal component analysis. We are attempting to take $n$ number of time series and model them in terms of $m$ underlying states, where $m<n$.
 
-The data was broken into subset time-series based on variable values, below are the subsets>
-
+The data was broken into subset time-series based on variable values, below are the subsets\>
 
 ```{r, echo = FALSE}
 vars <- data.frame(Variables = c("Sex = Male", "Sex = Female", "NYHA = Class I/II", "NYHA = Class III/IV",
@@ -32,23 +27,19 @@ vars <- data.frame(Variables = c("Sex = Male", "Sex = Female", "NYHA = Class I/I
 knitr::kable(vars, row.names = FALSE, align = "c")
 ```
 
-## Weather 
+## Weather
 
+Examination of the meterological variables showed very close similarities across weather stations, and some value discrepancies in Daylight. Therefore, the average for each meteorological variable was taken from the four weather stations to create single data vector for each covariate, thus eliminating any additional noise from individual weather stations. This was preferable to subsetting the patient data to their respective weather station and running separate models.
 
-Examination of the meterological variables showed very close similarites across wether stations, and some value discrepancies in Daylight. Therefore, the average for each meteorological varaible was taken from the four weather stations to create single data vector for each covariate, thus eliminating any additional noise from individual weather stations. This was prefereable to subsetting the patient data to their respective weather station and running seperate models.
-
-The discrepancies in the Daylight were troublesome, and believed to be erroneous. Therefore, hours of sunlight was taken from an outside data source for the specific centroid of Grand Rapids, MI.
-![](Wx.png)
+The discrepancies in the Daylight were troublesome, and believed to be erroneous. Therefore, hours of sunlight was taken from an outside data source for the specific centroid of Grand Rapids, MI. ![](Wx.png)
 
 ## States
 
-Dynamic Factor Analysis was applied to detect $m=3$ hidden states. While in the previous model had optimal AIC at $m=4$ states, the addition of the meteorological variables provided a better fit with 3 latent state processes.  An unconstrained covariance matrix was used. Daylight, Precipitation, Temperature, and a binary vairable indicating Weekends were used to hone the model and had the lowest AIC.
+Dynamic Factor Analysis was applied to detect $m=3$ hidden states. While in the previous model had optimal AIC at $m=4$ states, the addition of the meteorological variables provided a better fit with 3 latent state processes. An unconstrained covariance matrix was used. Daylight, Precipitation, Temperature, and a binary vairable indicating Weekends were used to hone the model and had the lowest AIC.
 
 ![](State_graphWx.png)
 
 A varimax rotation was used to solve for the factor loadings. This seeks a rotation matrix that maximizes the difference between the loadings. We can see in the below graph which variables correspond most strongly to which underlying states.
-
-
 
 ![](DFA_results_Wx.png)
 
@@ -56,14 +47,10 @@ Lastly, the fits obtained from the DFA Fitting were compared against the observe
 
 ![](DFA_vs_ObservedWx.png)
 
-
 ![](DFA_vs_Observed2Wx.png)
-
 
 ## Main Takeaways
 
- - Meteorological variables such as Daylight, Precipitation, and Temperature increased model fitting, making the linear combinations of the latent states better at prediction.
- - Snowfall did not improve model model fitting
- - State 2 corresponds most strongly with hospitalized patient's. Indicating a steady decline over time if the patient is hospitalized.
- 
- 
+-   Meteorological variables such as Daylight, Precipitation, and Temperature increased model fitting, making the linear combinations of the latent states better at prediction.
+-   Snowfall did not improve model model fitting
+-   State 2 corresponds most strongly with hospitalized patient's. Indicating a steady decline over time if the patient is hospitalized.
