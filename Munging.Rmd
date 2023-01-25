@@ -42,20 +42,36 @@ shp <- st_read("data/torts_shp/Galapagos Tortoise Movement Ecology Programme Sha
 
 crs <- "EPSG:4326"
 
-sp <- SpatialPoints(as(shp, "Spatial"))
 pts <- st_read("data/points.dbf")
 
 pts <- st_as_sf(pts, coords = c("long", "lat"), crs = crs)
 
 pts_sample <- st_set_crs(pts[sample(1:nrow(pts), 10000),], 4326)
 
+## Picking Sante Fe 
 
-ggplot(pts_sample)+
-  geom_sf(aes(colour = individual), alpha = .05)+
-  theme_minimal()
 
-ggplot(shp)+
-  geom_sf()
+bbox <- st_bbox(c(xmin = -89, xmax = -85, ymin = -1.5, ymax = -1.3), crs = st_crs(4326))
+
+df <- st_crop(pts, c(xmin = -89.8, xmax = -89.5, ymin = -1.5, ymax = -1.3))
+
+
+####
+
+
+
+g <- ggplot(df)+
+  geom_sf(aes(colour = as.Date(timestamp)), alpha = .05, size = .1)+
+  theme_minimal()+
+  coord_sf(xlim = c(-89.72, -89.65), ylim = c(-1.4, -1.34))+
+  scale_colour_gradientn(colours = pal(100))+
+  theme(legend.position = "bottom")+
+  labs(colour = "Date")
+
+
+ggsave(g, filename = "points2.png", dpi = 1000, 
+       width = 12, height = 10)
+
 
 ```
 
@@ -76,14 +92,14 @@ dem <- get_elev_raster(sp, prj = crs, z = 12)
 ggdem <- ggplot()+
   ggspatial::layer_spatial(dem)+
   geom_sf(data = pts_sample, aes(colour = ind_ident), 
-          size = .5, alpha = .1, show.legend = FALSE)+
+          size = .1, alpha = .5, show.legend = FALSE)+
   theme_minimal()+
   scale_fill_gradientn(colours = pal(100))+
   scale_colour_grey()+
   labs(fill = "Elevation")
 
-ggsave(plot = ggdem, filename = "plots/DEM_sample.png", dpi = 500,
-       height = 6, width = 10)
+ggsave(plot = ggdem, filename = "plots/DEM_sample.png", dpi = 1000,
+       height = 10, width = 12)
 
 ## Eleveation changes through time
 
@@ -95,11 +111,119 @@ ggsave(plot = ggdem, filename = "plots/DEM_sample.png", dpi = 500,
 
 ```{r}
 
+ggplot(ptsc)+
+  geom_histogram(aes(x = height), bins = 90, 
+                 colour = "black", fill = "gray80")+
+  theme_minimal()
+
+pts$date <- pts$data_decod
+
+g <- ggplot(pts[which(pts$height>0 & pts$height < 1000),])+
+  geom_line(aes(x = as.Date(timestamp), y = height, group = ind_ident),
+            alpha = .5, size = .2)+
+  facet_wrap(~ind_ident, scales = "free_x")+
+  theme_minimal()
+  
+ggsave(g, filename = "plots/ts.png", dpi = 400, height = 10, width = 14)
+
+
+g <- ggplot(pts[which(pts$height>0 & pts$height < 1000),])+
+  geom_line(aes(x = as.Date(timestamp), y = height, colour = ind_ident),
+            alpha = .8, size = .1, show.legend = FALSE)+
+  facet_wrap(~individual)+
+  theme_minimal()+
+  scale_colour_manual(aesthetics = "colour", values = pal(123))
+  
+ggsave(g, filename = "plots/ts1.png", dpi = 400, height = 10, width = 14)
+
+g <- ggplot(pts[which(pts$height>0 & pts$height < 1000),])+
+  geom_line(aes(x = as.Date(timestamp), y = zheight, colour = temperatur),
+            alpha = .75, size = .05, show.legend = FALSE)+
+  facet_wrap(~individual)+
+  theme_minimal()+
+  scale_colour_gradient2(low = pal(10)[1], mid = pal(10)[5], high = pal(10)[10],
+                         midpoint = median(pts$temperatur))
+
+ggsave(g, filename = "plots/ts2.png", dpi = 400, height = 10, width = 14)
+
+
+pts <- pts %>% 
+  group_by(ind_ident) %>% 
+  mutate(h.group = ifelse(mean(height>625), "High Elev.", "Low Elev.")) %>% 
+  ungroup() %>% 
+  group_by(individual) %>% 
+  mutate(zheight = MARSS::zscore(height))
+
+ggplot(pts)+
+  geom_histogram(aes(x = height, group = h.group))+
+  facet_wrap(~h.group)
+
+
+df <- pts %>% 
+  filter(individual == "Chelonoidis hoodensis" & height < 150 & height >0) %>% 
+  mutate(zheight = MARSS::zscore(height))
+
+summary(df$height)
+g <- ggplot(df)+
+  geom_line(aes(x = as.Date(timestamp), y = zheight, colour = temperatur),
+            alpha = .75, size = .05, show.legend = FALSE)+
+  facet_wrap(~individual)+
+  theme_minimal()+
+  scale_colour_gradient2(low = pal(10)[1], mid = pal(10)[5], high = pal(10)[10],
+                         midpoint = median(pts$temperatur))
+
+ggsave(g, filename = "plots/ts3.png", dpi = 400, height = 10, width = 14)
 
 
 ```
 
 
+## Checking out distances
+
+```{r}
+
+df$time <- as.POSIXct(df$timestamp)
+hist(df$time, breaks = 50000)
+dist <- df %>%
+  arrange(ind_ident, time) %>% 
+  group_by(ind_ident) %>% 
+  mutate(
+    geometry_lagged = lag(geometry, default = NA)) %>%
+  slice(-1) %>% 
+  mutate(
+    line = st_sfc(purrr::map2(
+      .x = geometry, 
+      .y = geometry_lagged, 
+      .f = ~{st_union(c(.x, .y)) %>% st_cast("LINESTRING")}
+    ))) 
+test <- st_crs(dist$line, 4326)
+test <- st_set_geometry(dist, dist$line)
+
+test <- st_set_crs(test, 4326)
+test <- st_transform(test, 4326)
+
+g <- ggplot(test) +
+  geom_sf(aes(geometry = geometry, colour = ind_ident), size = .1)+
+  theme_minimal()+
+  coord_sf(xlim = c(-89.72, -89.65), ylim = c(-1.4, -1.34))
+
+ggsave(g, filename = "plots/lines.png", dpi = 1000,
+       width = 12, height = 10)
+
+
+hist(dist[which(as.numeric(dist$dist)<1000),])
+
+ggplot(dist)+
+  geom_histogram(aes(x = as.numeric(dist)))+
+  scale_x_continuous(limits = c(0,300))
+
+chron(dist$timestamp, format = c("%Y-%m-%d", "%h:%m:%s"))
+
+
+
+as.date
+summary(dist$dist)
+```
 
 
 
