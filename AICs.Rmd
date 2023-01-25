@@ -83,7 +83,6 @@ ggsave("Z_Weather.tiff", dpi = 1200)
 
 ```
 
-
 ```{r State2, eval = FALSE}
 library(MARSS)
 
@@ -132,7 +131,6 @@ saveRDS(mwdtpws2, "Modelling/mwdtpws2.rds")
 
 
 ```
-
 
 ```{r State3, eval = FALSE}
 
@@ -227,7 +225,6 @@ saveRDS(mwdtpws4, "Modelling/mwdtpws4.rds")
 
 ```
 
-
 ```{r State5, eval = FALSE}
 
 model.list.dne.5 = list(m=5, R="unconstrained", tinitx=1)
@@ -274,8 +271,6 @@ saveRDS(mwdtpw5, "Modelling/mwdtpw5.rds")
 saveRDS(mwdtpws5, "Modelling/mwdtpws5.rds")
 
 ```
-
-
 
 ```{r TableOrg}
 
@@ -367,7 +362,7 @@ knitr::kable(df)
 
 # Methods
 
-The observed physical activity time series data was agregatted into distinct individual time series based on particular covariates of interest. For example, Male & Female physical activity time series were created to explore differences in physical activity between male & female subjects. The same approach was used for Age (Young vs Old), BMI (High vs. Low), Comorbidites (>2 vs. $\le$ 2), Hospitalization (Yes vs. No), NYHA Class (I/II vs. III/IV), and Physical Activity (> 132 minutes vs $\le$ 132 minutes). This method created 14 aggreate time series based on median physical activity to stratify trends throughout the year based on subject's medical/demographic information. 
+The observed physical activity time series data was aggregated into distinct individual time series based on particular covariates of interest. For example, Male & Female physical activity time series were created to explore differences in physical activity between male & female subjects. The same approach was used for Age (Young vs Old), BMI (High vs. Low), Comorbidites (\>2 vs. $\le$ 2), Hospitalization (Yes vs. No), NYHA Class (I/II vs. III/IV), and Physical Activity (\> 132 minutes vs $\le$ 132 minutes). This method created 14 aggregate time series based on median physical activity to stratify trends throughout the year based on subject's medical/demographic information.
 
 ```{r, results = "asis"}
 sub <- readRDS("Data/analysis_raw_data.rds")
@@ -392,15 +387,9 @@ t1
 kable(t1, format = "rst")
 ```
 
+Dynamic Factor Analysis (DFA) was used in an effort to summarize the 14 different time series and identify latent states attributable to specific covariates of a patient. DFA is a technique for identifying common underlying trends from a multivariate time series such that the number of trends, $m$, is less than the total number of time series, $n$. The time series can therefore be modelled as a linear combination of the common trends, a level parameter, other explanatory variables, and a noise component (Zuur 2003).
 
-Dynamic Factor Analysis (DFA) was used in an effort to summarize the 14 different time series and identify latent states attributable to specific covariates of a patient. DFA is a technique for identifying common underlying trends from a multivariate time series such that the number of trends, $m$, is less than the total number of time series, $n$. The time series can therefore be modelled as a linear combination of the common trends, a level parameter, other explanatory variables, and a noise component (Zuur 2003). 
-
-Long Format:
-$$y_{it} = z_{i1}\alpha_{1t}+z_{i2}\alpha_{2t}+...+z_{iM}\alpha_{Mt} + e_{it}$$
-Matrix Noation:
-$$y_t = Z\alpha_t+e_t$$
-
-
+Long Format: $$y_{it} = z_{i1}\alpha_{1t}+z_{i2}\alpha_{2t}+...+z_{iM}\alpha_{Mt} + e_{it}$$ Matrix Noation: $$y_t = Z\alpha_t+e_t$$
 
 ```{r}
 library(dplyr)
@@ -415,13 +404,9 @@ summaries <- sub %>%
 
 ```
 
+Zuur, A. F., R. J. Fryer, I. T. Jolliffe, R. Dekker, and J. J. Beukema. 2003. "Estimating Common Trends in Multivariate Time Series Using Dynamic Factor Analysis." Environmetrics 14 (7): 665--85.
 
-Zuur, A. F., R. J. Fryer, I. T. Jolliffe, R. Dekker, and J. J. Beukema. 2003. “Estimating Common Trends in Multivariate Time Series Using Dynamic Factor Analysis.” Environmetrics 14 (7): 665–85.
-
-Dynamic factor analysis to estimate common
-trends in fisheries time series
-A.F. Zuur, I.D. Tuck, and N. Bailey
-
+Dynamic factor analysis to estimate common trends in fisheries time series A.F. Zuur, I.D. Tuck, and N. Bailey
 
 ```{r MDS}
 
@@ -455,7 +440,6 @@ ggsave("MDS.tiff", dpi = 1200)
 ```
 
 $$\sum_ty_{it}, R^2$$
-
 
 ```{r FACTOR LOADINGS AND SSE}
 
@@ -605,7 +589,6 @@ CORRFUN <- function(x, type=c('lower', 'upper', 'full', 'flatten'),
 CORRFUN(cbind(states, mets2))
 ```
 
-
 ```{r METS&STATES}
 
 corrs <- psych::corr.test(x = states, y = mets2, method = "kendall", adjust = "BH")
@@ -705,4 +688,3 @@ all.df <- rbind(sex, nyha, hosp, cmbd, pa, age, bmi)
 saveRDS(all.df, "Data/sumstats.rds")
 
 ```
-

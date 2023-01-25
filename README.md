@@ -1,2 +1,2 @@
 # Torts
-MARSS and HMM Models for Galoagos Data
+MARSS and HMM Models for Galapagos Data
