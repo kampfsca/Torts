@@ -1,0 +1,313 @@
+---
+title: Preliminary Analysis of Galapagos Tortoise Movement Patterns
+authors:
+  - name: Andy Kampfschulte
+    department: Spatial Sciences Institute
+    affiliation: University of Southern California
+    location: Los Angeles, CA
+    email: kampfsch@usc.edu
+keywords:
+  - Latent Class
+  - Tortoises
+  - Animal Movement
+bibliography: references.bib
+biblio-style: unsrt
+output: rticles::arxiv_article
+keep_tex: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE,
+                      eval = FALSE)
+```
+
+
+# Introduction
+
+
+Data are presented for the tracking of movement of Galpagos Tortoises. There are tortoises spread across several islands, leading research to wonder how behavior of these animals differs from place to place. Here, going off of an influential movement ecology paper, I examine the movement strategies of 24 tortoises across to Islands to to (1) see how movement differs between these islands, (2) evaluate underlying latent states over time, by individual, and (3) to see if previous research can be replicated regarding the movement strategies of these tortoises. 
+
+
+```{r, eval = FALSE}
+library(lsmnsd)
+data(Christian) 
+nsd1<-NSD_fct(Christian$x, Christian$y)
+nsd <-NSD_fct(test[[1]]$lat, test[[1]]$long)
+
+Christian_out<-clustNSD(cbind(range01(nsd)[1:1000], test[[1]]$time2[1:1000]), n.iter=1000, WAIC=F, simplify=F)
+summary(simple.clust(Christian_out))
+Christian_class<-classify(Christian_out)
+summary(Christian_class)
+```
+
+
+```{r}
+ref2 <- ref[which(ref$study.site!= ""), ]
+inds <- ref2[which(ref2$study.site %in% c("Isla Isabela (Alcedo)", "Isla Espanola")), ]
+pts$tag_ident <- as.character(pts$tag_ident)
+inds$tag.id <- as.character(inds$tag.id)
+adat <- inner_join(pts, inds, by = c("tag_ident" = "tag.id", "ind_ident" = "animal.id"))
+adat$time <- as.POSIXct(adat$timestamp)
+
+test <- adat %>% 
+  filter(tag_ident != "3284") %>% # only 9 observations
+  group_by(ind_ident) %>% 
+  arrange(time) %>% 
+  mutate(time2 = 1:n()) %>% 
+  ungroup() %>% 
+  filter(time2 <2000) %>% 
+  group_split(ind_ident)
+
+
+test <- lapply(test, as.data.frame)
+
+saveRDS(test, "data/ADAT.rds")
+
+
+
+```
+
+
+
+```{r}
+
+test <- readRDS("data/adat.rds")
+st <- proc.time()
+library(parallel)
+library(doParallel)
+
+cores <- detectCores()
+cl <- makeCluster(cores[1]-1)
+registerDoParallel(cl)
+nsd <- list()
+out <- list()
+class <- list()
+mv <- foreach(i = 1:length(test)) %dopar% {
+
+ library(lsmnsd)
+ 
+  out[[i]] <-clustNSD(cbind(range01(NSD_fct(test[[i]]$long, test[[i]]$lat)), test[[i]]$time2),
+                      n.iter=10000, WAIC=F, simplify=F,
+                      n.chains = 4)
+  # class[[i]] <-classify(out[[i]])
+
+}
+
+stopCluster(cl)
+end <- proc.time()
+
+ttime <- end - st
+ttime/60
+
+saveRDS(mv, "data/data.rds")
+
+class <- lapply(mv, function(x){classify(x)})
+
+```
+
+
+
+```{r, eval = FALSE}
+
+mv2 <- list()
+mv3 <- list()
+state <- list()
+summary <- list()
+for(i in 1:30){
+  mv2[[i]]<- cbind(mv[[i]][["BUGSoutput"]][["data"]], 
+                   rep(i, nrow(mv[[i]][["BUGSoutput"]][["data"]])))
+  state[[i]] <- mv[[i]][["BUGSoutput"]][["summary"]][2:nrow(mv[[i]][["BUGSoutput"]][["data"]])+1, "50%"]
+  summary[[i]] <- mv[[i]][["BUGSoutput"]][["summary"]][1,]
+  mv3[[i]] <- cbind(mv2[[i]], state[[i]])
+}
+
+mv3 <- as.data.frame(do.call("rbind", mv3))
+
+sites <- list()
+for(i in 1:30){
+  sites[[i]] <- test[[i]][1,c("study.site", "ind_ident")]
+}
+
+sites <- data.frame(s = do.call("rbind", sites),
+                    no = 1:30)
+colnames(sites) <- c("site", "ID", "no")
+mvfin <- inner_join(mv3, sites, by = c("V3" = "no"))
+g <- ggplot(mvfin)+
+  geom_line(aes(x = V2, y = V1, colour = site), size = .2)+
+  facet_wrap(~ID)+
+  theme_minimal()+
+  scale_colour_manual(aesthetics = "colour", values = pal(2))+
+  labs(x = "Time Interval",
+       y = "Net Squared Displacement",
+       colour = "Location")+
+  theme(legend.position = "bottom")
+
+ggsave(g, filename = "plots/NSD.png", dpi = 800, width = 10, height = 8)
+
+test <- mvfin %>% 
+  group_by(ID) %>% 
+  arrange(ID, V2) %>% 
+  mutate(chg = paste0(lag(floor(V4),1), "->", floor(V4)),
+         chg = ifelse(grepl("NA",chg) | floor(V4) == lag(floor(V4),1), NA, chg)) %>% 
+  filter(!(ID %in% c("Chica", "Espanola", "Franz", "Gaby", "Thane", "Wolfgang")))
+
+
+g <- test %>% 
+  mutate(name = paste0(ID, " (",site, ")")) %>% 
+  ggplot(.)+
+  geom_line(aes(x = V2, y = V1, colour = V4), size = .3)+
+  facet_wrap(~name)+
+  scale_colour_gradientn(colours = pal(3))+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  labs(colour="Movement State Classification",
+       x = "Time Step",
+       y = "Net Squared Displacement")
+
+ggsave(g, filename = "plots/NSD2.png", dpi = 800, width = 10, height = 8)
+
+g <- ggplot(test)+
+  geom_violin(aes( y = V4, x = site, fill = site), alpha = .5,
+              show.legend = FALSE)+
+  theme_minimal()+
+  scale_fill_manual(aesthetics = "fill", values = pal(2))+
+  labs(x = "Site",
+       y = "Movement State Classification")
+ggsave(g, filename = "plots/class.png", dpi = 400, width = 5, height = 5)
+
+t <- test %>% 
+  filter(!is.na(chg)) %>%
+  #filter(chg %in% c("1->2", "2->1")) %>% 
+  group_by(ID, site, chg) %>% 
+  summarise(n = n()) %>% 
+ggplot(.)+
+  geom_boxplot(aes(y = n, x = chg))+
+  facet_wrap(~site, scales = "free")+
+  labs(x = "Classification Shift",
+       y = "Frequency")+
+  theme_minimal()
+
+ggsave(t, filename = "plots/shifts.png", dpi = 400, height = 6, width = 8)
+###################
+
+
+
+table <- as.data.frame(do.call("rbind", summary))
+table$no <- as.numeric(row.names(table))
+table <- inner_join(table, sites, by = "no") %>% 
+  filter(!(ID %in% c("Chica", "Espanola", "Franz", "Gaby", "Thane", "Wolfgang"))) %>%
+  select(ID, site, mean, sd, `50%`, Rhat)
+
+saveRDS(table, "data/t2.rds")
+
+t1 <- test %>% 
+  group_by(ID, site, V4) %>% 
+  summarise(n = n()) %>% 
+  mutate(t1 = round((n*100)/sum(n),2)) %>% 
+  select(-n) %>% 
+  tidyr::pivot_wider(names_from = V4, values_from = t1)
+
+colnames(t1) <- c("ID", "Site", "Time in 1 (%)", "Time in 2 (%)", "Time in 3 (%)")
+
+
+saveRDS(t1, "data/t1.rds")
+
+```
+
+# Methods
+
+A lot of this work is a replication of [@bastille2016] \cite{bastille2016}, in which a latent class modelling framework was used in tandem with Net Squared Displacement (NSD). First, let's discuss NSD. NSD appears to be a common apprach used to model animal movement patterns \cite{netdis1, netdis2, bastille2016}. Simply put, it is the squared Euclidean distance of a given point from a starting point. Therefore, migratory animals would be expected to have a large NSD over time, while sedentary animals would have a relatively lower NSD. This statistic is useful in a time-series format, examining NSD over time to evaluate movement strategies. Migratory animals, will generally have a double-sigmoid pattern to the NSD over time, while sedentary animals will have no clear trend of NSD. [@bastille2016] uses this NSD framework to throw into a latent state model to evaluate movement strategies for animals at any given time. The idea is that the movement patterns of an individual at time $t$ can be modelled as a mixture of 3 different latent states, and examining the transitions of these 3 states over time can give us insight into an animals overall movement behavior. This analytical approach was chosen because (1) it was applied to Galapagos tortoises in [@bastille2016] and was shown to be a superior method to modelling animal movement, (2) is spatio-temporal in perspective, and (3) provides the opportunity to incorporate meterolgical data later on.
+
+For the remainder of this paper, states 1 & 2 are associated with encampment-oriented behavior, while state 3 is defined as an exploratory movement state. 
+
+
+```{r, eval = TRUE}
+
+library(kableExtra)
+
+kbl(readRDS("../data/t1.rds"),
+    booktabs = TRUE, linesep = "") %>% 
+  kable_classic_2()
+
+```
+
+I thought it would be a good idea to compare the movement classifications of as many tortoises as I could, and see if movement patterns differed across Islands. From the available movement data, Espanola Island - the island of interest - had 22 available tortoises with movement data - one of which consisted of only a few observations and was discarded, while the ecologically similar Isabela Island had 11. This provided a total of 30 individuals to perform latent class models on NSD values. 
+
+```{r, eval = TRUE}
+
+library(kableExtra)
+
+kbl(readRDS("../data/t2.rds"),
+    booktabs = TRUE, linesep = "",
+    col.names = c("ID", "Site", "Mean", "SD", "Median", "$\\hat{R}$"),
+    escape = F,
+    caption = "Deviance and Convergence Statistics for Latent Class. The main take away from this table is the Gelman Diagnositic ($\\hat{R}$) is below the standard convergence criteria of 1.1") %>% 
+  kable_classic_2()
+
+```
+
+The ${\sf{R}}$ package `lsmnsd` was used to explore the latent states for the 30 individuals. This uses Markov Chain Monte Carlo methods to optimise the fit for each latent state. A total 10,000O sample iterations were run to get the transition matrix to converge, 50% of the iterations were discarded as burn-in, and a thinning interval of 1/5 was applied for a total 4,000 viable simulations per individual. This took approximately 90 minutes to run in parallel using an 11th generation Intel i7 processor with 16 cores. Of the 30, 6 individual tortoise models were unable to converge properly, and were discarded. Leaving a final analysis of 24 tortoises, 14 from Espanlola Island, and 10 from Isabela Island. 
+
+# Results
+
+Analysis was hampered due to computational bottlenecks, so time steps were limited to 2000 for each individual tortoise. 
+
+## Difference in States Between Islands
+
+\begin{figure}
+\centering
+\includegraphics[scale=.6]{"../plots/class.png"}
+\caption{Results of the latent state model/net squared displacement analysis to classify movement patterns.}
+\label{fig:class}
+\end{figure}
+
+Figure \ref{fig:class} shows the density distribution of the three latent states for each island. While the shapes of the distribution are similar, there appears to be a much larger density of the first state, associated with encampment behavior on Espanola, while Isabela Island has a higher density of values at state 3, indicating more exploratory movement patterns.
+
+
+
+## Differences in Transition Patterns Between Islands
+
+
+
+\begin{figure}
+\centering
+\includegraphics[scale=.6]{"../plots/shifts.png"}
+\caption{Boxplots of the frequency of Movement state shifts by Island.}
+\label{fig:shifts}
+\end{figure}
+
+Exploring the frequency of latent shifts is where things get interesting and the inter-island (and inter-individual) differences become clearer (figure \ref{fig:shifts}. For Isabela Island, many of the latent shift occur going from states 2 to 3 and states 3 to 1. The fact that state 3 is present in the most frequently observed shifts is evidence that these tortoises are more migratory in their movement strategy. 
+
+Espanola Island, on the other hand, has the highest frequency of laten shifts going between states 1 and 2 (in both directions). This is evidence of a more prevalent encampment movement strategy, where individuals seldom migrate or deviate far from an initial start point. 
+
+\begin{figure}
+\centering
+\includegraphics[scale=.6]{"../plots/NSD2.png"}
+\caption{Net Squared Displacement (NSD) of individual tortoises over time. The lines are coloured by the assigned movement class of the individual within each time step.}
+\label{fig:eh}
+\end{figure}
+
+On an individual level figure \ref{fig:eh} shows NSD values over time, coloured by latent state assignment for each individual. We can see that many of the Espanola tortoises have low NSD values to begin with, while Isabela tortoises have unique migratory and nomadic patterns. 
+
+
+
+# Discussion
+
+While taking some time to understand on an intuitive level, I found the latent state approach to assessing movement strategies a reasonable approach. This work, depsite being incomplete as of this writing, already serves as an extension of [@bastille2016] by increasing the sample size of tortoises from 8 to 24, and also reinforces its findings that tortoises on Espanola Island do not exhibit migratory behavior like some individuals do on Isabela Island. A close examination of figure \ref{fig:eh} shows that NSD is often most erratic in Espanola tortoises, while many of the NSD trends that are the most clear-cut are on Isabela.
+
+
+# Ideal Next Steps
+
+This was an immense amount of legwork just to derive a response variable of movement type. Continuing off of this work, it would be prudent to take time to rexamine the data inputs and analysis. Much of this work was truncated to expedite results. For example, only the first 2,000 time stamps were taken for each individual to reduce computational constraints. Only Isabella Island was selected s a comparison for Espanola Island for this reason as well. Revisiting these decisions could lead to a more rich, verdant, analysis. Second, this work should be continued; this only the first phase. Incorporating meterological data to compare against these observed movement patterns on different islands would be a worthy endpoint for this analysis. There is much opportunity to incorporate the weather readings from island weather stations and on the individual GPS devices to place these individuals within a meterological context, and explore what role weather plays on movement patterns. 
+
+
+# A Note From the Author
+
+To close this out, I'd like to break a steadfast rule in presenting one's own research: *never undersell*. This semester was without doubt a bit of a roller coaster, and chaotic at times, so before I start breaking rules, let me offer my sincere thanks for the support and backing of SSI through the ups and downs of the semester. 
+
+Many thanks aside, I'd like to be frank and admit that I don't think this is my best work. I grossly underestimated the complexity of the data, and even moreso, figuring out how to frame a research question from the data. While this work was in some ways and analytical challenge (latent states, transition matrices, etc), the biggest challenge was pivoting from my little world of public health statistics and data, to learning the topography of movement ecology research. The data are somewhat similiar, but the questions and mindset seem to be on opposite poles. That, and a rather severe case of COVID in the first week of December, have left me wishing I could've gotten further. 
+
+
+
+
+
