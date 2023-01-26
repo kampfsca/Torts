@@ -14,7 +14,6 @@ library(tint)
 options(htmltools.dir.version = FALSE)
 ```
 
-
 ```{r}
 
 pacs <- c("ggplot2",
@@ -32,13 +31,15 @@ pal <- function(x){
 
 ```
 
-
 ```{r}
 
 ref <- read.csv("data/Galapagos Tortoise Movement Ecology Programme-reference-data (1).csv")
 
+# Will have to manually add points.dbf to shapefiles, too large for GitHub: https://drive.google.com/file/d/1gg_YMqm0pMNliD2wsJINZppjVkpgDUpd/view?usp=sharing
+
 
 shp <- st_read("data/torts_shp/Galapagos Tortoise Movement Ecology Programme Shapefile") 
+
 
 crs <- "EPSG:4326"
 
@@ -177,7 +178,6 @@ ggsave(g, filename = "plots/ts3.png", dpi = 400, height = 10, width = 14)
 
 ```
 
-
 ## Checking out distances
 
 ```{r}
@@ -224,7 +224,3 @@ chron(dist$timestamp, format = c("%Y-%m-%d", "%h:%m:%s"))
 as.date
 summary(dist$dist)
 ```
-
-
-
-
