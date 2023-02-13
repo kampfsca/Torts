@@ -19,6 +19,18 @@ keep_tex: true
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, cache = TRUE,
                       eval = FALSE)
+
+libs <- c("sf",
+          "ggplot2",
+          "dplyr",
+          "tidyr")
+
+lapply(libs, library, character.only = TRUE)
+
+pal <- function(x){
+  wesanderson::wes_palette("Zissou1", x, "continuous")
+}
+
 ```
 
 
@@ -42,8 +54,18 @@ summary(Christian_class)
 
 
 ```{r}
+ref <- read.csv("data/Galapagos Tortoise Movement Ecology Programme-reference-data (1).csv")
+
+shp <- st_read("data/torts_shp/Galapagos Tortoise Movement Ecology Programme Shapefile") 
+
+crs <- "EPSG:4326"
+
+pts <- st_read("data/points.dbf")
+
+#pts <- st_as_sf(pts, coords = c("long", "lat"), crs = crs)
+
 ref2 <- ref[which(ref$study.site!= ""), ]
-inds <- ref2[which(ref2$study.site %in% c("Isla Isabela (Alcedo)", "Isla Espanola")), ]
+inds <- ref2
 pts$tag_ident <- as.character(pts$tag_ident)
 inds$tag.id <- as.character(inds$tag.id)
 adat <- inner_join(pts, inds, by = c("tag_ident" = "tag.id", "ind_ident" = "animal.id"))
@@ -61,7 +83,7 @@ test <- adat %>%
 
 test <- lapply(test, as.data.frame)
 
-saveRDS(test, "data/ADAT.rds")
+saveRDS(test, "data/ADAT_11Feb2023.rds")
 
 
 
@@ -87,10 +109,9 @@ mv <- foreach(i = 1:length(test)) %dopar% {
  library(lsmnsd)
  
   out[[i]] <-clustNSD(cbind(range01(NSD_fct(test[[i]]$long, test[[i]]$lat)), test[[i]]$time2),
-                      n.iter=10000, WAIC=F, simplify=F,
+                      n.iter=100000, WAIC=F, simplify=F,
                       n.chains = 4)
   # class[[i]] <-classify(out[[i]])
-
 }
 
 stopCluster(cl)
@@ -99,7 +120,7 @@ end <- proc.time()
 ttime <- end - st
 ttime/60
 
-saveRDS(mv, "data/data.rds")
+saveRDS(mv, "data/data_12Feb2023.rds")
 
 class <- lapply(mv, function(x){classify(x)})
 
@@ -113,7 +134,7 @@ mv2 <- list()
 mv3 <- list()
 state <- list()
 summary <- list()
-for(i in 1:30){
+for(i in 1:122){
   mv2[[i]]<- cbind(mv[[i]][["BUGSoutput"]][["data"]], 
                    rep(i, nrow(mv[[i]][["BUGSoutput"]][["data"]])))
   state[[i]] <- mv[[i]][["BUGSoutput"]][["summary"]][2:nrow(mv[[i]][["BUGSoutput"]][["data"]])+1, "50%"]
@@ -124,24 +145,26 @@ for(i in 1:30){
 mv3 <- as.data.frame(do.call("rbind", mv3))
 
 sites <- list()
-for(i in 1:30){
+for(i in 1:length(test)){
   sites[[i]] <- test[[i]][1,c("study.site", "ind_ident")]
 }
 
 sites <- data.frame(s = do.call("rbind", sites),
-                    no = 1:30)
+                    no = 1:96)
 colnames(sites) <- c("site", "ID", "no")
 mvfin <- inner_join(mv3, sites, by = c("V3" = "no"))
 g <- ggplot(mvfin)+
-  geom_line(aes(x = V2, y = V1, colour = site), size = .2)+
-  facet_wrap(~ID)+
+  geom_line(aes(x = V2, y = V1, colour = site),
+            alpha = .2,
+            size = .2)+
+  #facet_wrap(~ID)+
   theme_minimal()+
-  scale_colour_manual(aesthetics = "colour", values = pal(2))+
+  scale_colour_manual(aesthetics = "colour", values = pal(4))+
   labs(x = "Time Interval",
        y = "Net Squared Displacement",
        colour = "Location")+
   theme(legend.position = "bottom")
-
+g
 ggsave(g, filename = "plots/NSD.png", dpi = 800, width = 10, height = 8)
 
 test <- mvfin %>% 
@@ -164,7 +187,7 @@ g <- test %>%
        x = "Time Step",
        y = "Net Squared Displacement")
 
-ggsave(g, filename = "plots/NSD2.png", dpi = 800, width = 10, height = 8)
+ggsave(g, filename = "plots/NSD2_13Feb.png", dpi = 800, width = 10, height = 8)
 
 g <- ggplot(test)+
   geom_violin(aes( y = V4, x = site, fill = site), alpha = .5,
